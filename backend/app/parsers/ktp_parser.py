@@ -11,6 +11,7 @@ class KTPParser(BaseDocumentParser):
             "full_name": "N/A",
             "place_of_birth": "N/A",
             "date_of_birth": "N/A",
+            "blood_type": "N/A",
             "gender": "N/A",
             "address": "N/A",
             "rt_rw": "N/A",
@@ -24,6 +25,8 @@ class KTPParser(BaseDocumentParser):
             "expiry_date": "SEUMUR HIDUP",
             "issuing_office": "N/A"
         }
+
+        prompt_lines = [l.strip() for l in prompt.split('\n') if l.strip()]
 
         # 1. NIK (id_number)
         nik_match = re.search(r'(\[NIK_\d+\]|\[ID_\d+\]|(?:NIK|N|K|N1K)\s*[:.-]?[ \t]*(\d{16}))', prompt, flags=re.IGNORECASE)
@@ -39,20 +42,30 @@ class KTPParser(BaseDocumentParser):
         if name_match:
             ktp_data["full_name"] = name_match.group(1)
         else:
-            name_m2 = re.search(r'\b(?:Nama|Name)\s*[:.-]?[ \t]*([A-Za-z \t]+)', prompt, flags=re.IGNORECASE)
-            if name_m2:
-                cand = name_m2.group(1).strip()
-                cand = re.sub(r'^(?:Nama|Name)[:.-]?\s*', '', cand, flags=re.IGNORECASE).strip()
-                if cand and len(cand) >= 2 and not any(kw in cand.upper() for kw in ["TEMPAT", "LAHIR", "PROVINSI", "KOTA", "NIK"]):
-                    ktp_data["full_name"] = cand
+            for idx, l in enumerate(prompt_lines):
+                if 'NIK' in l.upper() or re.search(r'\d{16}', l):
+                    for sub_l in prompt_lines[idx+1 : idx+4]:
+                        sub_c = sub_l.strip()
+                        if sub_c and not any(kw in sub_c.upper() for kw in ['NIK', 'NAMA', 'PROVINSI', 'KOTA', 'KABUPATEN', 'TEMPAT', 'TEMPAL', 'LAHIR', 'TGL', 'AGAMA', 'GOL', 'JENIS', 'ALAMAT', 'RT', 'RW']):
+                            if re.match(r'^[A-Za-z\s]{3,50}$', sub_c):
+                                ktp_data["full_name"] = sub_c
+                                break
 
-        # 3. DOB & POB
+            if ktp_data["full_name"] == "N/A":
+                name_m2 = re.search(r'\b(?:Nama|Name)\s*[:.-]?[ \t]*([A-Za-z \t]+)', prompt, flags=re.IGNORECASE)
+                if name_m2:
+                    cand = name_m2.group(1).strip()
+                    cand = re.sub(r'^(?:Nama|Name)[:.-]?\s*', '', cand, flags=re.IGNORECASE).strip()
+                    if cand and len(cand) >= 2 and not any(kw in cand.upper() for kw in ["TEMPAT", "LAHIR", "PROVINSI", "KOTA", "NIK"]):
+                        ktp_data["full_name"] = cand
+
+        # 3. POB & DOB
         dob_match = re.search(r'(\[DOB_\d+\]|\[DATE_\d+\]|\b\d{1,2}[\s.\-/]+\d{1,2}[\s.\-/]+\d{2,4}\b)', prompt)
         if dob_match:
             ktp_data["date_of_birth"] = dob_match.group(1).strip().replace(' ', '-')
 
         pob_dob_match = re.search(
-            r'(?:Tempat/Tgl Lahir|Tempat Tgl Lahir|Tempat/Tanggal Lahir|TempalTgl Lahir|Tgl Lahir)\s*[:.-]?[ \t]*([A-Za-z\s]+?)[,.:\s]+(\[DOB_\d+\]|\[DATE_\d+\]|\d{1,2}[\s.\-/]+\d{1,2}[\s.\-/]+\d{2,4})',
+            r'(?:Tempat/Tgl|Tempal/Tgl|Tempat|Tempal)\s*Lahir\s*[:.-]?[ \t]*([A-Za-z\s]+?)[,.:\s]+(\[DOB_\d+\]|\[DATE_\d+\]|\d{1,2}[\s.\-/]+\d{1,2}[\s.\-/]+\d{2,4})',
             prompt,
             flags=re.IGNORECASE
         )
@@ -60,26 +73,29 @@ class KTPParser(BaseDocumentParser):
             ktp_data["place_of_birth"] = pob_dob_match.group(1).strip()
             ktp_data["date_of_birth"] = pob_dob_match.group(2).strip().replace(' ', '-')
         else:
-            for i, l in enumerate(lines):
+            for i, l in enumerate(prompt_lines):
                 if any(kw in l.upper() for kw in ["TEMPAT", "LAHIR", "TEMPAL"]):
                     pob_m = re.search(r'(?:TEMPAT/TGL LAHIR|TEMPAT TGL LAHIR|LAHIR)\s*[:.-]?[ \t]*([A-Za-z\s]+)', l, flags=re.IGNORECASE)
                     if pob_m:
                         pob_cand = pob_m.group(1).split(',')[0].strip()
                         if pob_cand and not any(kw in pob_cand.upper() for kw in ["JENIS", "ALAMAT", "GOL", "NIK"]):
                             ktp_data["place_of_birth"] = pob_cand
-                    elif i + 1 < len(lines):
-                        pob_cand = lines[i+1].replace(',', '').strip()
-                        if pob_cand and not any(c.isdigit() for c in pob_cand):
-                            ktp_data["place_of_birth"] = pob_cand
 
-        # 4. Gender
+        # 4. Blood Type (Golongan Darah)
+        blood_m = re.search(r'(?:Gol\.?\s*Darah|GolDarah|Gol\.Darah)\s*[:.-]?[ \t]*([ABO\+-]+)', prompt, flags=re.IGNORECASE)
+        if blood_m:
+            cand_b = blood_m.group(1).strip()
+            if len(cand_b) <= 3 and cand_b.upper() not in ['LAKI', 'PEREMPUAN', 'N/A']:
+                ktp_data["blood_type"] = cand_b.upper()
+
+        # 5. Gender
         if "LAKI-LAKI" in prompt.upper() or "LAKI" in prompt.upper():
             ktp_data["gender"] = "LAKI-LAKI"
         elif "PEREMPUAN" in prompt.upper():
             ktp_data["gender"] = "PEREMPUAN"
 
-        # 5. Address
-        addr_match = re.search(r'(\[ADDRESS_\d+\]|(?:Alamat|Address)\s*[:.-]?[ \t]*([^\n]+))', prompt, flags=re.IGNORECASE)
+        # 6. Address
+        addr_match = re.search(r'(\[ADDRESS_\d+\]|(?:JL\.?|JALAN)\s*[^\n|]+|(?:Alamat|Address)\s*[:.-]?[ \t]*([^\n]+))', prompt, flags=re.IGNORECASE)
         if addr_match:
             address = addr_match.group(1).strip()
             address = re.sub(r'^(?:Alamat|Address)[:.;,\s-]*', '', address, flags=re.IGNORECASE).strip()
@@ -91,28 +107,35 @@ class KTPParser(BaseDocumentParser):
             address = re.sub(r'\s+', ' ', address).strip()
             ktp_data["address"] = address
 
-        # 6. RT/RW
-        rtrw_match = re.search(r'(?:RT/RW|RT|RW)\s*[:.-]?[ \t]*([0-9/\s]+)', prompt, flags=re.IGNORECASE)
+        # 7. RT/RW
+        rtrw_match = re.search(r'(?:RT/RW|RT\s*/\s*RW|RT|RW)\s*[:.-]?[ \t]*([0-9/\s-]+)', prompt, flags=re.IGNORECASE)
         if rtrw_match:
             ktp_data["rt_rw"] = re.sub(r'^[:;.,\s-]+', '', rtrw_match.group(1)).strip()
 
-        # 7. Kel/Desa
-        kel_match = re.search(r'(?:Kel/Desa|Kelurahan|Desa)\s*[:.-]?[ \t]*([^\n]+)', prompt, flags=re.IGNORECASE)
-        if kel_match:
-            kel_desa = kel_match.group(1).strip()
-            kel_desa = re.sub(r'^(?:Kel/Desa|Kelurahan|Desa)[:.;,\s-]*', '', kel_desa, flags=re.IGNORECASE).strip()
-            ktp_data["kel_desa"] = re.sub(r'^[:;.,\s-]+', '', kel_desa).strip()
+        # 8. Kel/Desa
+        for idx, l in enumerate(prompt_lines):
+            if any(kw in l.upper() for kw in ['KEL/DESA', 'KELURAHAN', 'DESA']):
+                line_val = re.sub(r'^(?:Kel/Desa|Kelurahan|Desa)[:.;,\s-]*', '', l, flags=re.IGNORECASE).strip()
+                if line_val and not any(kw in line_val.upper() for kw in ['KECAMATAN', 'AGAMA', 'STATUS', 'PEKERJAAN']):
+                    ktp_data["kel_desa"] = line_val
+                    break
+                elif idx > 0 and prompt_lines[idx-1].strip().isalpha():
+                    ktp_data["kel_desa"] = prompt_lines[idx-1].strip()
+                    break
 
-        # 8. Kecamatan
-        kec_match = re.search(r'(?:Kecamatan|Kec)\s*[:.-]?[ \t]*([^\n]+)', prompt, flags=re.IGNORECASE)
+        # 9. Kecamatan
+        kec_match = re.search(r'(?:Kecamatan|Kec)\s*[:.-]?[ \t]*([A-Za-z0-9_]+)', prompt, flags=re.IGNORECASE)
         if kec_match:
-            kecamatan = kec_match.group(1).strip()
-            kecamatan = re.sub(r'^(?:Kecamatan|Kec)[:.;,\s-]*', '', kecamatan, flags=re.IGNORECASE).strip()
-            ktp_data["kecamatan"] = re.sub(r'^[:;.,\s-]+', '', kecamatan).strip()
+            ktp_data["kecamatan"] = kec_match.group(1).strip()
 
-        # 9. Religion
+        # 10. Religion
+        rel_str = prompt.upper()
         rel_match = re.search(r'(?:Agama|Religion)\s*[:.-]?[ \t]*([^\n]+)', prompt, flags=re.IGNORECASE)
-        rel_str = rel_match.group(1).strip().upper() if rel_match else prompt.upper()
+        if rel_match and rel_match.group(1).strip():
+            cand_rel = rel_match.group(1).strip().upper()
+            if any(w in cand_rel for w in ["ISCAM", "ISLM", "1SLAM", "ISLAM", "KRIST", "KRIS", "KATO", "KATH", "HIND", "BUD", "KHONG"]):
+                rel_str = cand_rel
+
         if any(w in rel_str for w in ["ISCAM", "ISLM", "1SLAM", "ISLAM"]):
             ktp_data["religion"] = "ISLAM"
         elif any(w in rel_str for w in ["KRIST", "KRIS"]):
@@ -126,7 +149,7 @@ class KTPParser(BaseDocumentParser):
         elif any(w in rel_str for w in ["KHONG"]):
             ktp_data["religion"] = "KHONGHUCU"
 
-        # 10. Marital Status
+        # 11. Marital Status
         mar_match = re.search(r'(?:Status Perkawinan|Perkawinan|Status)\s*[:.-]?[ \t]*([^\n]+)', prompt, flags=re.IGNORECASE)
         mar_str = mar_match.group(1).strip().upper() if mar_match else prompt.upper()
         if "BELUM" in mar_str:
@@ -134,15 +157,30 @@ class KTPParser(BaseDocumentParser):
         elif "KAWIN" in mar_str:
             ktp_data["marital_status"] = "KAWIN"
 
-        # 11. Occupation
+        # 12. Occupation
+        occ_str = prompt.upper()
         occ_match = re.search(r'(?:Pekerjaan|Occupation)\s*[:.-]?[ \t]*([^\n]+)', prompt, flags=re.IGNORECASE)
-        if occ_match:
-            occ = occ_match.group(1).strip().upper()
-            if "PELAJAR" in occ and "MAHASISWA" in occ:
-                occ = "PELAJAR / MAHASISWA"
-            elif "KARYAWAN" in occ and "SWASTA" in occ:
-                occ = "KARYAWAN SWASTA"
-            ktp_data["occupation"] = occ
+        if occ_match and occ_match.group(1).strip():
+            cand_occ = occ_match.group(1).strip().upper()
+            if any(w in cand_occ for w in ["PELAJAR", "MAHASISWA", "KARYAWAN", "PNS", "WIRASWASTA", "BURUH", "TNI", "POLRI"]):
+                occ_str = cand_occ
+
+        if "PELAJAR" in occ_str or "MAHASISWA" in occ_str:
+            ktp_data["occupation"] = "PELAJAR / MAHASISWA"
+        elif "SWASTA" in occ_str or "KARYAWAN" in occ_str:
+            ktp_data["occupation"] = "KARYAWAN SWASTA"
+
+        # 13. Issue Date
+        all_dates = list(re.finditer(r'(\[DOB_\d+\]|\[DATE_\d+\]|\b\d{1,2}[\s.\-/]+\d{1,2}[\s.\-/]+\d{2,4}\b)', prompt))
+        if len(all_dates) >= 2:
+            ktp_data["issue_date"] = all_dates[-1].group(1).strip()
+
+        # 14. Issuing Office
+        off_match = re.search(r'\b(KOTA\s*[A-Za-z]+|KABUPATEN\s*[A-Za-z]+)\b', prompt, flags=re.IGNORECASE)
+        if off_match:
+            cand_off = off_match.group(0).strip()
+            cand_off = re.sub(r'^(KOTA|KABUPATEN)\s*', r'\1 ', cand_off, flags=re.IGNORECASE)
+            ktp_data["issuing_office"] = cand_off.upper()
 
         # Sanitize return fields
         for k, v in ktp_data.items():

@@ -25,8 +25,7 @@ DOB_REGEX = re.compile(
 # Address & RT/RW Regexes
 ADDRESS_CONTEXT_REGEX = re.compile(
     r'\b(?:Alamat|Address)\s*[:.-]?[ \t]*([A-Za-z0-9\s.,/\\-]+?)(?=\s*(?:Tanggal|Tgl|Date|Nomor|No\.|Invoice|PO|Email|No\.\s*Telp|\||\n)|$)|'
-    r'\b(?:JL\.?|JALAN)\s+[^\n|]+|'
-    r'\b(?:RT/RW|RT|RW)\s*[:.-]?[ \t]*([0-9/\s-]+)',
+    r'\b(?:JL\.?|JALAN)\s*[^\n|]+',
     re.IGNORECASE
 )
 
@@ -177,7 +176,7 @@ class PIIMasker:
         if 'NAME' in self.enabled_types:
             for m in NAME_CONTEXT_REGEX.finditer(text):
                 name_val = m.group(1).strip()
-                if any(kw in name_val.upper() for kw in ["PAYABLE", "INVOICE", "ORDER", "SUBTOTAL", "TOTAL", "AMOUNT"]):
+                if any(kw in name_val.upper() for kw in ["PAYABLE", "INVOICE", "ORDER", "SUBTOTAL", "TOTAL", "AMOUNT", "TEMPAT", "TEMPAL", "LAHIR", "TGL", "PROVINSI", "KOTA", "KABUPATEN", "AGAMA", "PEKERJAAN", "STATUS", "BERLAKU", "NIK", "GOL", "JENIS", "KELAMIN", "ALAMAT"]):
                     continue
                 full_match = m.group()
                 start_offset = full_match.index(name_val)
@@ -193,6 +192,25 @@ class PIIMasker:
                     'type': 'NAME',
                     'value': name_val
                 })
+
+            # KTP Name Line Matcher (All-caps line between NIK and Nama/Tempat)
+            lines_txt = text.split('\n')
+            for idx, l_txt in enumerate(lines_txt):
+                if 'NIK' in l_txt.upper() or re.search(r'\b\d{16}\b', l_txt):
+                    for sub_l in lines_txt[idx+1 : idx+4]:
+                        sub_c = sub_l.strip()
+                        if sub_c and not any(kw in sub_c.upper() for kw in ['NIK', 'NAMA', 'PROVINSI', 'KOTA', 'KABUPATEN', 'TEMPAT', 'TEMPAL', 'LAHIR', 'TGL', 'AGAMA', 'GOL', 'JENIS', 'ALAMAT', 'RT', 'RW']):
+                            if re.match(r'^[A-Za-z\s]{3,50}$', sub_c):
+                                start_pos = text.find(sub_c)
+                                if start_pos != -1:
+                                    matches.append({
+                                        'start': start_pos,
+                                        'end': start_pos + len(sub_c),
+                                        'type': 'NAME',
+                                        'value': sub_c
+                                    })
+                                break
+
             # Also mask name segment inside Passport MRZ Line 1 e.g. P<IDN...
             mrz_name_regex = re.compile(r'P<[A-Z]{3}([A-Z<]{10,})', re.IGNORECASE)
             for m in mrz_name_regex.finditer(text):
