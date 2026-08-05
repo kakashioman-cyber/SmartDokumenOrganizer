@@ -137,6 +137,9 @@ class InvoiceParser(BaseDocumentParser):
                 clean_l = line.strip()
                 if clean_l.startswith("---") or "PAGE" in clean_l.upper():
                     continue
+                if clean_l.startswith("[ORG_"):
+                    invoice_data["vendor_name"] = clean_l
+                    break
                 l_upper = clean_l.upper()
                 if any(kw in l_upper for kw in ["INVOICE", "NOTA", "STRUK", "PI "]):
                     v = re.sub(r'^(INVOICE|NOTA|STRUK)\s*', '', clean_l, flags=re.IGNORECASE).strip()
@@ -144,10 +147,10 @@ class InvoiceParser(BaseDocumentParser):
                     if len(v) > 2 and v.upper() not in ["FOR", "DETAILS"]:
                         invoice_data["vendor_name"] = v
                         break
-                elif not any(kw in l_upper for kw in ["SUBMITTED", "KEPADA", "BILL TO", "INVOICE FOR", "TANGGAL", "DATE", "PHONE", "TELP", "JALAN", "JL", "RUKO"]) and len(clean_l) > 3:
+                elif not any(kw in l_upper for kw in ["SUBMITTED", "KEPADA", "BILL TO", "INVOICE FOR", "TANGGAL", "DATE", "PHONE", "TELP", "JALAN", "JL", "RUKO", "NO PART", "PART NO", "DESKRIPSI", "SATUAN", "HARGA", "JUMLAH", "QTY"]) and len(clean_l) > 3:
                     v = re.split(r'\b(INVOICE|INV|NUMBER|NOTA|STRUK|DATE|TELP|EMAIL|JALAN|JL|JL\.|JAKARTA|RUKO|GEDUNG)\b', clean_l, flags=re.IGNORECASE)[0].strip()
                     v = re.sub(r'^[|:\s\-+]+|[|:\s\-+]+$', '', v).strip()
-                    if len(v) > 2 and v.upper() not in ["FOR", "DETAILS", "PURCHASE ORDER", "PURCHASEORDER", "PURCHASE", "ORDER", "SURAT JALAN", "FAKTUR", "INVOICE"]:
+                    if len(v) > 2 and v.upper() not in ["FOR", "DETAILS", "PURCHASE ORDER", "PURCHASEORDER", "PURCHASE", "ORDER", "SURAT JALAN", "FAKTUR", "INVOICE", "NO PART NO DESKRIPSI QTY SATUAN HARGA SATUAN JUMLAH"]:
                         invoice_data["vendor_name"] = v
                         break
 
@@ -467,32 +470,33 @@ class InvoiceParser(BaseDocumentParser):
                         if not is_dim:
                             qty_val = cand_q
 
-                    # Try matching cand_q * unit_price == total_price
+                    # Try matching 3-token math (v_q * v_p == v_t) among line tokens FIRST
                     found_math = False
-                    cand_q_f = parse_float_digits(qty_val)
-                    if 1 <= cand_q_f <= 5000:
-                        for j, (w_p, ct_p, v_p) in enumerate(num_tokens):
-                            for k, (w_t, ct_t, v_t) in enumerate(num_tokens):
-                                if k != j and abs(cand_q_f * v_p - v_t) < 0.5 and v_t >= v_p:
-                                    price_val = ct_p
-                                    tot_val = ct_t
-                                    found_math = True
-                                    break
+                    for i, (w_q, ct_q, v_q) in enumerate(num_tokens):
+                        if 1 <= v_q <= 5000:
+                            for j, (w_p, ct_p, v_p) in enumerate(num_tokens):
+                                if j != i:
+                                    for k, (w_t, ct_t, v_t) in enumerate(num_tokens):
+                                        if k != i and k != j and abs(v_q * v_p - v_t) < 0.5 and v_t >= v_p:
+                                            qty_val = str(int(v_q)) if v_q == int(v_q) else str(v_q)
+                                            price_val = ct_p
+                                            tot_val = ct_t
+                                            found_math = True
+                                            break
+                                    if found_math: break
                             if found_math: break
 
+                    # FALLBACK: Try cand_q * unit_price == total_price if no 3-token math matched
                     if not found_math:
-                        for i, (w_q, ct_q, v_q) in enumerate(num_tokens):
-                            if 1 <= v_q <= 5000:
-                                for j, (w_p, ct_p, v_p) in enumerate(num_tokens):
-                                    if j != i:
-                                        for k, (w_t, ct_t, v_t) in enumerate(num_tokens):
-                                            if k != i and k != j and abs(v_q * v_p - v_t) < 0.5 and v_t >= v_p:
-                                                qty_val = str(int(v_q)) if v_q == int(v_q) else str(v_q)
-                                                price_val = ct_p
-                                                tot_val = ct_t
-                                                found_math = True
-                                                break
-                                        if found_math: break
+                        cand_q_f = parse_float_digits(qty_val)
+                        if 1 <= cand_q_f <= 5000:
+                            for j, (w_p, ct_p, v_p) in enumerate(num_tokens):
+                                for k, (w_t, ct_t, v_t) in enumerate(num_tokens):
+                                    if k != j and abs(cand_q_f * v_p - v_t) < 0.5 and v_t >= v_p:
+                                        price_val = ct_p
+                                        tot_val = ct_t
+                                        found_math = True
+                                        break
                                 if found_math: break
 
                     # 6. Extract clean description without destroying dimensions like (.749X.133)
@@ -500,10 +504,10 @@ class InvoiceParser(BaseDocumentParser):
                     if sku_val != "-":
                         desc_val = desc_val.replace(sku_val, "")
 
-                    # Strip exact prices and totals found
-                    for w_token, ct_token, val in num_tokens:
+                    # Strip exact prices and totals found (longest token first to prevent substring collision)
+                    for w_token, ct_token, val in sorted(num_tokens, key=lambda x: len(x[0]), reverse=True):
                         if ct_token == price_val or ct_token == tot_val:
-                            desc_val = desc_val.replace(w_token, "")
+                            desc_val = re.sub(r'\b' + re.escape(w_token) + r'\b', '', desc_val)
                     desc_val = re.sub(r'\b' + re.escape(qty_val) + r'\s*(?:PCS|Pcs|pcs|UNIT|Unit|unit|SET|Set|set|KG|Kg|kg|BOX|Box|box|LEMBAR|Lembar|PACK|Pack|pack|ROLL|Roll|roll)\b', '', desc_val, flags=re.IGNORECASE)
                     desc_val = re.sub(r'\b' + re.escape(qty_val) + r'\b', '', desc_val)
                     desc_val = re.sub(r'\b0%\s*0\b', '', desc_val)

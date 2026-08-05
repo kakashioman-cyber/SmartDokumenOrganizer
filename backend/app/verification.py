@@ -74,10 +74,10 @@ def clean_currency_ocr_typos(text: str) -> str:
         tokens = l.split()
         norm_tokens = []
         for tok in tokens:
-            if re.search(r'\d', tok) and any(c in tok for c in "oOCczSs"):
+            is_num_tok = bool(re.match(r'^(?:Rp\.?|RP|AP|RF|S\$|\$|€|₹|IDR|USD|SGD|EUR)?[\d.,oOCczSs]+$', tok, re.IGNORECASE))
+            if is_num_tok and re.search(r'\d', tok) and any(c in tok for c in "oOCczSs"):
                 t = re.sub(r'(?<=\d)[oOCcz]', '0', tok, flags=re.IGNORECASE)
                 t = re.sub(r'[oOCcz](?=\d)', '0', t, flags=re.IGNORECASE)
-                t = re.sub(r'[oOCcz]{2,}$', '00', t, flags=re.IGNORECASE)
                 t = t.replace('zoo', '200').replace('z00', '200').replace('soo', '500').replace('s00', '500')
                 norm_tokens.append(t)
             else:

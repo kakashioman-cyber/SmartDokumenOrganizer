@@ -227,12 +227,12 @@ class VendorDocumentParser(BaseDocumentParser):
         used_line_indices = set()
 
         def clean_line_for_dim_nums(txt):
-            c = txt
+            c = re.sub(r'^\s*\d+[\s.]+', '', txt.strip())
             for s_item in all_skus:
                 c = c.replace(s_item, '')
             c = re.sub(r'\b\d{4}-\d{2}-\d{2}\b|\b\d{2}/\d{2}/\d{4}\b', '', c)
             c = re.sub(r'\b\d+\s*(?:inch|in|mm|cm|m)\b', '', c, flags=re.IGNORECASE)
-            c = re.sub(r'\bM\d+\b|(?:[×x*]|\bM)\s*\d+\b', '', c, flags=re.IGNORECASE)
+            c = re.sub(r'\bM\d+\b|\b\d+\s*[×x*]\s*\d+\b', '', c, flags=re.IGNORECASE)
             return c
 
         footer_i = len(lines)
@@ -308,6 +308,8 @@ class VendorDocumentParser(BaseDocumentParser):
                                     score = tot - dist_penalty
                                     
                                     if p in curr_nums and tot in curr_nums:
+                                        if q in curr_nums and q > 1:
+                                            score += 500000000000
                                         score += 100000000000
                                     elif cl_idx == line_i:
                                         score += 50000000000
@@ -354,7 +356,7 @@ class VendorDocumentParser(BaseDocumentParser):
                 next_w = desc_tokens[i_w + 1].lower() if i_w + 1 < len(desc_tokens) else ""
                 prev_w = desc_tokens[i_w - 1].lower() if i_w > 0 else ""
                 is_dimension = next_w in ["inch", "in", "mm", "cm", "m"] or re.match(r'^M\d+$', w, re.IGNORECASE) or prev_w in ['×', 'x', '*'] or w in ['×', 'x', '*']
-                if not is_dimension and (w.upper() == unit or w_flt in [q_val, p_val, tot_val] or abs(w_flt - tot_val) < 1000):
+                if not is_dimension and (w.upper() == unit or w_flt in [q_val, p_val, tot_val] or abs(w_flt - tot_val) < 1000 or abs(w_flt - p_val) < 0.5):
                     continue
                 clean_words.append(w)
             desc_clean = ' '.join(clean_words).strip()
