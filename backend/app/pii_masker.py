@@ -142,7 +142,7 @@ class PIIMasker:
             for m in DOB_REGEX.finditer(text):
                 # Exempt business transaction dates (Submitted on, Invoice Date, Due Date, Order Date, Delivery Date, PO Date)
                 pre_ctx = text[max(0, m.start() - 50):m.start()].upper()
-                if any(kw in pre_ctx for kw in ["SUBMITTED ON", "INVOICE DATE", "DUE DATE", "ORDER DATE", "DELIVERY DATE", "PO DATE", "JATUH TEMPO", "TANGGAL INVOICE", "TGL INVOICE"]):
+                if any(kw in pre_ctx for kw in ["SUBMITTED ON", "INVOICE DATE", "INV. DATE", "INV DATE", "DATE OF INVOICE", "DUE DATE", "ORDER DATE", "DELIVERY DATE", "PO DATE", "PAYMENT TERM", "PAYMENT DATE", "JATUH TEMPO", "TANGGAL INVOICE", "TGL INVOICE", "TANGGAL BAYAR", "TGL BAYAR"]):
                     continue
                 matches.append({
                     'start': m.start(),

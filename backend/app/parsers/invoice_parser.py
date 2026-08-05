@@ -207,8 +207,11 @@ class InvoiceParser(BaseDocumentParser):
 
         for idx, l in enumerate(lines):
             if inv_header_pat.search(l):
+                # Guard: Skip lines that are date labels (e.g. "Inv. Date : 11 February 2013")
+                if re.search(r'\b(?:DATE|TANGGAL|TGL)\b', l, re.IGNORECASE) and not re.search(r'\bINVOICE\s*(?:#|:)\s*\d', l, re.IGNORECASE):
+                    continue
                 # Case A: Same line extraction
-                m_same = re.search(r'(?:No\.?\s*Invoice|Invoice\s*No\.?|Invoice\s*Number|Nomor\s*Invoice|No\.?\s*Faktur|Faktur\s*No\.?|No\.?\s*Inv|INV/|INV-|INV:)\s*[:.#-]*\s*([A-Za-z0-9_*?/\.-]{3,30})', l, flags=re.IGNORECASE)
+                m_same = re.search(r'(?:No\.?\s*Invoice|Invoice\s*No\.?|Invoice\s*Number|Nomor\s*Invoice|No\.?\s*Faktur|Faktur\s*No\.?|No\.?\s*Inv|INVOICE|INV/|INV-|INV:)\s*[:.#-]*\s*([A-Za-z0-9_*?/\.-]{3,30})', l, flags=re.IGNORECASE)
                 if m_same and m_same.group(1).upper() not in ["DATE", "TANGGAL", "FOR", "TO", "DETAILS", "NO", "NUMBER"]:
                     raw_val = m_same.group(1).replace('*', '').strip()
                     if re.search(r'\d', raw_val):
@@ -428,67 +431,84 @@ class InvoiceParser(BaseDocumentParser):
                 # 2. Extract SKU / Part No (e.g. AN-PLT-625, AN-PLT-397, SKU-123)
                 sku_val = "-"
                 sku_m = re.search(r'\b([A-Za-z0-9]{2,6}-[A-Za-z0-9]{2,6}(?:-\d{2,5})?)\b', l_clean)
-                if sku_m:
+                if sku_m and re.search(r'\d', sku_m.group(1)):
                     sku_val = sku_m.group(1)
 
-                # 3. Price & Qty tokens extraction (handles OCR typos o/O/z/s/i)
-                raw_prices = re.findall(r'(?:Rp\.?|RP|AP|RF|S\$|\$)?\s*([0-9.,oOCczsS]+)', l_clean)
-                clean_prices = []
-                for p in raw_prices:
-                    p_clean = re.sub(r'[oO]', '0', p).replace('z', '2').replace('Z', '2').replace('s', '5').replace('S', '5').replace('ı', '1').strip(' .,')
-                    if p_clean not in ["03", "01", "02", "04", "05", "06", "07", "08", "09", "10", "11", "12"] and re.search(r'\d', p_clean) and len(p_clean) >= 2:
-                        clean_prices.append(p_clean)
+                # 3. Strip leading item index number (e.g. '1 ', '2.', '3 ') from l_clean
+                l_no_num = re.sub(r'^\s*\d+[\s.]+', '', l_clean)
 
-                if clean_prices and parse_float_digits(clean_prices[-1]) > 0:
-                    tot_val = clean_prices[-1]
-                    price_val = clean_prices[-2] if len(clean_prices) >= 2 else tot_val
+                # 4. Extract price & number tokens without unit words messing up letters (like Pcs -> c5)
+                l_no_units = re.sub(r'\b(?:PCS|Pcs|pcs|UNIT|Unit|unit|SET|Set|set|KG|Kg|kg|BOX|Box|box|LEMBAR|Lembar|PACK|Pack|pack|ROLL|Roll|roll|EACH|Each|each|BATANG|Batang|METER|Meter|MTR|LITER|Liter|LTR|PAIL|DUS|LOT|BAG|UOM|PKS|BTL)\b', '', l_no_num)
+                
+                raw_price_tokens = re.findall(r'\b(?:\d{1,3}(?:,\d{3})*|\d+)(?:\.\d+)?\b', l_no_units)
+                num_tokens = []
+                for t in raw_price_tokens:
+                    val = parse_float_digits(t)
+                    if val > 0:
+                        num_tokens.append((t, val))
 
-                    # 4. Smart Dimension Shield & Qty extraction
+                if num_tokens:
+                    tot_val = num_tokens[-1][0]
+                    price_val = num_tokens[-2][0] if len(num_tokens) >= 2 else tot_val
+
+                    # 5. Smart Qty & Price Math Match
                     qty_val = "1"
-                    q_match = re.search(r'\b(\d+)\s*(?:UNIT|Unit|unit|BOX|Box|box|EACH|Each|each|PCS|Pcs|pcs|SET|Set|set|BATANG|Batang|LEMBAR|Lembar|ROLL|Roll|KG|Kg|kg|METER|Meter|MTR|LITER|Liter|LTR|CAN|DRUM|BOTOL|PAIL|DUS|PACK|LOT|BAG|UOM|PKS|BTL)\b', l_clean, re.IGNORECASE)
+                    q_match = re.search(r'\b(\d+)\s*(?:UNIT|Unit|unit|BOX|Box|box|EACH|Each|each|PCS|Pcs|pcs|SET|Set|set|BATANG|Batang|LEMBAR|Lembar|ROLL|Roll|KG|Kg|kg|METER|Meter|MTR|LITER|Liter|LTR|CAN|DRUM|BOTOL|PAIL|DUS|PACK|LOT|BAG|UOM|PKS|BTL)\b', l_no_num, re.IGNORECASE)
                     if q_match:
                         cand_q = q_match.group(1)
-                        is_dim = bool(re.search(r'\b[A-Za-z0-9]+\s*[xX*]\s*' + re.escape(cand_q) + r'\b', l_clean) or
-                                     re.search(r'\b' + re.escape(cand_q) + r'\s*(?:inch|in|\"|mm|cm|m)\b', l_clean, re.IGNORECASE))
+                        is_dim = bool(re.search(r'\b[A-Za-z0-9]+\s*[xX*]\s*' + re.escape(cand_q) + r'\b', l_no_num) or
+                                     re.search(r'\b' + re.escape(cand_q) + r'\s*(?:inch|in|\"|mm|cm|m)\b', l_no_num, re.IGNORECASE))
                         if not is_dim:
                             qty_val = cand_q
 
-                    num_vals = [parse_float_digits(p) for p in clean_prices if parse_float_digits(p) > 0]
-                    if len(num_vals) >= 2:
-                        best_tuple = None
-                        best_score = -1
-                        for idx_q, q_f in enumerate(num_vals):
-                            if 1 <= q_f <= 1000:
-                                for idx_p, p_f in enumerate(num_vals):
-                                    for idx_t, t_f in enumerate(num_vals):
-                                        if abs(q_f * p_f - t_f) < 0.5 and t_f >= p_f and (q_f != t_f or q_f == 1):
-                                            score = t_f
-                                            if idx_q < idx_p < idx_t:
-                                                score += 10000000
-                                            if score > best_score:
-                                                best_score = score
-                                                best_tuple = (q_f, p_f, t_f, clean_prices[idx_p], clean_prices[idx_t])
-                        if best_tuple:
-                            qty_val = str(int(best_tuple[0]))
-                            price_val = best_tuple[3]
-                            tot_val = best_tuple[4]
+                    # Try matching cand_q * unit_price == total_price
+                    found_math = False
+                    cand_q_f = parse_float_digits(qty_val)
+                    if cand_q_f > 0:
+                        for j, (t_p, v_p) in enumerate(num_tokens):
+                            for k, (t_t, v_t) in enumerate(num_tokens):
+                                if k > j:
+                                    if abs(cand_q_f * v_p - v_t) < 0.05 and v_t >= v_p:
+                                        price_val = t_p
+                                        tot_val = t_t
+                                        found_math = True
+                                        break
+                            if found_math: break
 
-                    # 5. Extract clean description
-                    desc_val = l_clean
+                    if not found_math:
+                        for i, (t_q, v_q) in enumerate(num_tokens):
+                            if 1 <= v_q <= 1000:
+                                for j, (t_p, v_p) in enumerate(num_tokens):
+                                    if j != i:
+                                        for k, (t_t, v_t) in enumerate(num_tokens):
+                                            if k != i and k != j and k > j:
+                                                if abs(v_q * v_p - v_t) < 0.05 and v_t >= v_p:
+                                                    qty_val = str(int(v_q)) if v_q == int(v_q) else str(v_q)
+                                                    price_val = t_p
+                                                    tot_val = t_t
+                                                    found_math = True
+                                                    break
+                                        if found_math: break
+                                if found_math: break
+
+                    # 6. Extract clean description without destroying dimensions like (.749X.133)
+                    desc_val = l_no_num
                     if sku_val != "-":
                         desc_val = desc_val.replace(sku_val, "")
 
-                    desc_val = re.sub(r'^(?:[0-9.]+\s+)?', '', desc_val)
+                    # Strip exact prices and totals found
+                    for p_t in [price_val, tot_val]:
+                        if p_t:
+                            desc_val = desc_val.replace(p_t, "")
+                    desc_val = re.sub(r'\b' + re.escape(qty_val) + r'\s*(?:PCS|Pcs|pcs|UNIT|Unit|unit|SET|Set|set|KG|Kg|kg|BOX|Box|box|LEMBAR|Lembar|PACK|Pack|pack|ROLL|Roll|roll)\b', '', desc_val, flags=re.IGNORECASE)
                     desc_val = re.sub(r'\b0%\s*0\b', '', desc_val)
-                    desc_val = re.sub(r'(?:Rp\.?|RP|AP|RF|S\$|\$)?\s*\d[\d.,oO]*\b', '', desc_val, flags=re.IGNORECASE)
-                    desc_val = re.sub(r'(?:Rp\.?|RP|AP|RF|S\$|\$)[A-Za-z0-9.]*', '', desc_val, flags=re.IGNORECASE)
+                    desc_val = re.sub(r'\b0%\b', '', desc_val)
+                    desc_val = re.sub(r'\b(?:Rp\.?|RP|S\$|\$)\b', '', desc_val, flags=re.IGNORECASE)
                     desc_val = re.sub(r'\b(?:\d+\s*)?(?:UNIT|BOX|EACH|PCS|SET|BATANG|LEMBAR|ROLL|KG|METER|MTR|LITER|DRUM|PAIL|DUS|PACK|LOT|BAG)\b', '', desc_val, flags=re.IGNORECASE)
-                    desc_val = re.sub(r'\b\d+\b', '', desc_val)
-                    desc_val = re.sub(r'%\s*$', '', desc_val)
                     desc_val = re.sub(r'^[|:\s,.\-]+|[|:\s,.\-]+$', '', desc_val).strip()
 
                     if desc_val and desc_val.upper() not in ["NO.", "NO", "PRODUCT DESCRIPTION", "DESKRIPSI", "QUANTITY", "UOM", "UNIT PRICE", "GROSS AMC.", "NET AMOUNT", "AAMOUNT", "HARGA SATUAN", "JUMLAH"]:
-                        real_qty = qty_val if (qty_val.isdigit() and int(qty_val) > 1) else calculate_qty(qty_val, price_val, tot_val)
+                        real_qty = qty_val
                         invoice_data["items"].append({
                             "no": str(len(invoice_data["items"]) + 1),
                             "sku": sku_val,
@@ -558,7 +578,7 @@ def clean_final_invoice_data(final_data, raw_prompt=""):
     # 3. Invoice Number Fallback Verification against raw unmasked prompt
     inv = str(final_data.get("invoice_number", "")).strip()
     if (inv in ["N/A", "Invoice", "PT", "NONE", "NULL", "", "-"] or not re.search(r'\d', inv)) and raw_prompt:
-        inv_m = re.search(r'(?:No\.?\s*Invoice|Invoice\s*No|Invoice\s*Number|NO INVOICE|INVOICE #|INV/|INV:|INV-|No\.?\s*Inv)\s*[:.-]?[ \t]*\n?\s*(?:[A-Za-z]+\s+){0,2}([A-Za-z0-9_*?/\.-]{3,30})', raw_prompt, re.IGNORECASE)
+        inv_m = re.search(r'(?:No\.?\s*Invoice|Invoice\s*No|Invoice\s*Number|NO INVOICE|INVOICE\s*[:#]|INVOICE #|INV/|INV:|INV-|No\.?\s*Inv)\s*[:.-]?[ \t]*\n?\s*(?:[A-Za-z]+\s+){0,2}([A-Za-z0-9_*?/\.-]{3,30})', raw_prompt, re.IGNORECASE)
         if not inv_m:
             inv_m = re.search(r'[:\s](INV/[A-Za-z0-9_/.-]+)', raw_prompt, re.IGNORECASE)
         if inv_m:
@@ -583,29 +603,11 @@ def clean_final_invoice_data(final_data, raw_prompt=""):
                             break
                 break
 
-    # 5. Date Normalization (Convert "11 February 2013" / "YYYY-MM-DD" / "28-03-2022" -> "DD/MM/YYYY" and default missing due_date to N/A)
-    import dateutil.parser
+    # 5. Date Preservation (Keep original date format from document; normalization only in Excel export)
     for date_key in ["invoice_date", "due_date"]:
         d_val = str(final_data.get(date_key, "")).strip()
         if not d_val or d_val in ["N/A", "null", "None", "undefined", ""]:
             final_data[date_key] = "N/A"
-        else:
-            m_iso = re.search(r'(\d{4})[\/\.-](\d{1,2})[\/\.-](\d{1,2})', d_val)
-            if m_iso:
-                final_data[date_key] = f"{int(m_iso.group(3)):02d}/{int(m_iso.group(2)):02d}/{m_iso.group(1)}"
-            else:
-                m_d = re.search(r'(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})', d_val)
-                if m_d:
-                    day, month, year = m_d.group(1), m_d.group(2), m_d.group(3)
-                    if len(year) == 2:
-                        year = f"20{year}"
-                    final_data[date_key] = f"{int(day):02d}/{int(month):02d}/{year}"
-                else:
-                    try:
-                        dt = dateutil.parser.parse(d_val, dayfirst=True)
-                        final_data[date_key] = dt.strftime("%d/%m/%Y")
-                    except Exception:
-                        pass
 
     # 6. Ensure PO Number is Present or N/A
     po_val = str(final_data.get("po_number") or "").strip()
@@ -677,7 +679,7 @@ def clean_final_invoice_data(final_data, raw_prompt=""):
                 if not sku_val or sku_val in ["-", "N/A", "null", "None"]:
                     desc = str(item.get("description", ""))
                     m_sku = re.search(r'\b([A-Za-z0-9]{3,6}-[A-Za-z0-9]{3,6}(?:-\d{3,4})?|\d{4,6})\b', desc)
-                    if m_sku and m_sku.group(1).upper() not in ["INCH", "BOX", "UNIT", "PCS", "PACK", "ROLL", "EACH"]:
+                    if m_sku and m_sku.group(1).upper() not in ["INCH", "BOX", "UNIT", "PCS", "PACK", "ROLL", "EACH"] and re.search(r'\d', m_sku.group(1)):
                         sku_val = m_sku.group(1)
                 item["sku"] = sku_val if sku_val else "-"
 
