@@ -224,17 +224,18 @@ class InvoiceParser(BaseDocumentParser):
                 # Case B: Next line extraction (immediately under NO INVOICE header)
                 if invoice_data["invoice_number"] == "N/A" and idx + 1 < len(lines):
                     val_line = lines[idx + 1].strip()
-                    tokens = val_line.split()
+                    val_clean = val_line.replace('*', '').strip()
                     header_blacklist = {"KETERANGAN", "HARGA", "DESCRIPTION", "QTY", "TOTAL", "PAYABLE", "CUSTOMER", "PROJECT", "DUE", "NOTES", "NOTES:"}
-                    for tok in tokens:
-                        tok_clean = tok.replace('*', '')
-                        is_date = bool(re.search(r'\b\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4}\b', tok_clean))
-                        if len(tok_clean) >= 1 and re.search(r'\d', tok_clean) and not is_date and not tok_clean.startswith('08') and not tok_clean.startswith('['):
-                            if tok_clean.upper() not in header_blacklist and not any(t in tok_clean for t in ["NAME_", "PHONE_", "ORG_"]):
-                                tok_clean = re.sub(r'[oO]', '0', tok_clean)
-                                tok_clean = re.sub(r'[?]', '1', tok_clean)
-                                invoice_data["invoice_number"] = tok_clean
-                                break
+                    if val_clean and re.search(r'\d', val_clean) and not val_clean.startswith('08') and not val_clean.startswith('['):
+                        if not any(h in val_clean.upper() for h in header_blacklist) and not any(t in val_clean for t in ["NAME_", "PHONE_", "ORG_"]):
+                            val_clean = re.sub(r'[oO]', '0', val_clean)
+                            val_clean = re.sub(r'[?]', '1', val_clean)
+                            code_m = re.search(r'\b([A-Za-z0-9]{2,6}-[A-Za-z0-9]{2,6}(?:-[A-Za-z0-9]{3,20})+|[A-Za-z]{2,5}/\d{2,15}|[A-Za-z]{2,5}-\d{2,15})\b', val_clean)
+                            if code_m:
+                                invoice_data["invoice_number"] = code_m.group(1)
+                            else:
+                                invoice_data["invoice_number"] = val_clean
+                            break
 
                 # Case C: Previous line extraction (above NO INVOICE header)
                 if (invoice_data["invoice_number"] == "N/A" or invoice_data["invoice_number"] == invoice_data.get("po_number")) and idx - 1 >= 0:
