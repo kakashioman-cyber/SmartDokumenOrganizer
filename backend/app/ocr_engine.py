@@ -62,10 +62,10 @@ def deskew_document_image(np_img):
             for line in lines_p:
                 x1, y1, x2, y2 = line[0]
                 angle = np.degrees(np.arctan2(y2 - y1, x2 - x1))
-                if abs(angle) < 30.0:
+                if abs(angle) <= 5.0:
                     angles.append(angle)
 
-        if not angles or abs(float(np.median(angles))) < 0.8:
+        if not angles or abs(float(np.median(angles))) < 0.8 or abs(float(np.median(angles))) > 5.0:
             return np_img
 
         angle = float(np.median(angles))
