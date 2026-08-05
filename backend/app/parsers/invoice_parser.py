@@ -300,6 +300,8 @@ class InvoiceParser(BaseDocumentParser):
 
             for kw in keywords:
                 for i, l in enumerate(text_lines):
+                    if any(h in l.upper() for h in ["DESCRIPTION", "UNIT PRICE", "TOTAL PRICE", "GROSS AMT", "NET AMOUNT", "QTY"]):
+                        continue
                     if re.search(rf'\b{re.escape(kw)}\b', l, re.IGNORECASE):
                         # 1. Kanan (Right / After keyword on same line)
                         m_after = re.search(rf'\b{re.escape(kw)}\b\s*[:.-]?[ \t]*(?:Rp\.?|RP|AP|RF|S\$|\$)?\s*([\d.,oO]{{3,15}})', l, re.IGNORECASE)
@@ -437,19 +439,19 @@ class InvoiceParser(BaseDocumentParser):
                 # 3. Strip leading item index number (e.g. '1 ', '2.', '3 ') from l_clean
                 l_no_num = re.sub(r'^\s*\d+[\s.]+', '', l_clean)
 
-                # 4. Extract price & number tokens without unit words messing up letters (like Pcs -> c5)
-                l_no_units = re.sub(r'\b(?:PCS|Pcs|pcs|UNIT|Unit|unit|SET|Set|set|KG|Kg|kg|BOX|Box|box|LEMBAR|Lembar|PACK|Pack|pack|ROLL|Roll|roll|EACH|Each|each|BATANG|Batang|METER|Meter|MTR|LITER|Liter|LTR|PAIL|DUS|LOT|BAG|UOM|PKS|BTL)\b', '', l_no_num)
-                
-                raw_price_tokens = re.findall(r'\b(?:\d{1,3}(?:,\d{3})*|\d+)(?:\.\d+)?\b', l_no_units)
+                # 4. Smart whitespace-based word tokenization supporting both IDR (35.000, 1.750.000) & International (19.04, 1,955.16)
+                words = l_no_num.split()
                 num_tokens = []
-                for t in raw_price_tokens:
-                    val = parse_float_digits(t)
-                    if val > 0:
-                        num_tokens.append((t, val))
+                for w in words:
+                    if re.search(r'\d', w):
+                        clean_w = re.sub(r'^(?:Rp\.?|RP|AP|RF|S\$|\$|€|₹|IDR|USD|SGD|EUR)', '', w, flags=re.IGNORECASE).strip(' %')
+                        val = parse_float_digits(clean_w)
+                        if val > 0:
+                            num_tokens.append((w, clean_w, val))
 
                 if num_tokens:
-                    tot_val = num_tokens[-1][0]
-                    price_val = num_tokens[-2][0] if len(num_tokens) >= 2 else tot_val
+                    tot_val = num_tokens[-1][1]
+                    price_val = num_tokens[-2][1] if len(num_tokens) >= 2 else tot_val
 
                     # 5. Smart Qty & Price Math Match
                     qty_val = "1"
@@ -465,27 +467,27 @@ class InvoiceParser(BaseDocumentParser):
                     found_math = False
                     cand_q_f = parse_float_digits(qty_val)
                     if cand_q_f > 0:
-                        for j, (t_p, v_p) in enumerate(num_tokens):
-                            for k, (t_t, v_t) in enumerate(num_tokens):
-                                if k > j:
-                                    if abs(cand_q_f * v_p - v_t) < 0.05 and v_t >= v_p:
-                                        price_val = t_p
-                                        tot_val = t_t
+                        for j, (w_p, ct_p, v_p) in enumerate(num_tokens):
+                            for k, (w_t, ct_t, v_t) in enumerate(num_tokens):
+                                if k > j and v_p != cand_q_f:
+                                    if abs(cand_q_f * v_p - v_t) < 0.5 and v_t >= v_p:
+                                        price_val = ct_p
+                                        tot_val = ct_t
                                         found_math = True
                                         break
                             if found_math: break
 
                     if not found_math:
-                        for i, (t_q, v_q) in enumerate(num_tokens):
-                            if 1 <= v_q <= 1000:
-                                for j, (t_p, v_p) in enumerate(num_tokens):
+                        for i, (w_q, ct_q, v_q) in enumerate(num_tokens):
+                            if 1 <= v_q <= 5000:
+                                for j, (w_p, ct_p, v_p) in enumerate(num_tokens):
                                     if j != i:
-                                        for k, (t_t, v_t) in enumerate(num_tokens):
+                                        for k, (w_t, ct_t, v_t) in enumerate(num_tokens):
                                             if k != i and k != j and k > j:
-                                                if abs(v_q * v_p - v_t) < 0.05 and v_t >= v_p:
+                                                if abs(v_q * v_p - v_t) < 0.5 and v_t >= v_p:
                                                     qty_val = str(int(v_q)) if v_q == int(v_q) else str(v_q)
-                                                    price_val = t_p
-                                                    tot_val = t_t
+                                                    price_val = ct_p
+                                                    tot_val = ct_t
                                                     found_math = True
                                                     break
                                         if found_math: break
@@ -497,15 +499,15 @@ class InvoiceParser(BaseDocumentParser):
                         desc_val = desc_val.replace(sku_val, "")
 
                     # Strip exact prices and totals found
-                    for p_t in [price_val, tot_val]:
-                        if p_t:
-                            desc_val = desc_val.replace(p_t, "")
+                    for w_token, ct_token, val in num_tokens:
+                        if ct_token == price_val or ct_token == tot_val:
+                            desc_val = desc_val.replace(w_token, "")
                     desc_val = re.sub(r'\b' + re.escape(qty_val) + r'\s*(?:PCS|Pcs|pcs|UNIT|Unit|unit|SET|Set|set|KG|Kg|kg|BOX|Box|box|LEMBAR|Lembar|PACK|Pack|pack|ROLL|Roll|roll)\b', '', desc_val, flags=re.IGNORECASE)
                     desc_val = re.sub(r'\b0%\s*0\b', '', desc_val)
                     desc_val = re.sub(r'\b0%\b', '', desc_val)
-                    desc_val = re.sub(r'\b(?:Rp\.?|RP|S\$|\$)\b', '', desc_val, flags=re.IGNORECASE)
+                    desc_val = re.sub(r'\b(?:Rp\.?|RP|AP|RF|S\$|\$)\b', '', desc_val, flags=re.IGNORECASE)
                     desc_val = re.sub(r'\b(?:\d+\s*)?(?:UNIT|BOX|EACH|PCS|SET|BATANG|LEMBAR|ROLL|KG|METER|MTR|LITER|DRUM|PAIL|DUS|PACK|LOT|BAG)\b', '', desc_val, flags=re.IGNORECASE)
-                    desc_val = re.sub(r'^[|:\s,.\-]+|[|:\s,.\-]+$', '', desc_val).strip()
+                    desc_val = re.sub(r'\s+', ' ', desc_val).strip(' ,.-')
 
                     if desc_val and desc_val.upper() not in ["NO.", "NO", "PRODUCT DESCRIPTION", "DESKRIPSI", "QUANTITY", "UOM", "UNIT PRICE", "GROSS AMC.", "NET AMOUNT", "AAMOUNT", "HARGA SATUAN", "JUMLAH"]:
                         real_qty = qty_val
@@ -661,6 +663,8 @@ def clean_final_invoice_data(final_data, raw_prompt=""):
     final_data["tax"] = tax_pct_str
     
     tot_val = final_data.get("total_amount") or sub_val
+    if sub_f > 0 and (tot_f <= 0 or tot_f < sub_f):
+        tot_val = sub_val
     final_data["total_amount"] = format_currency(tot_val, currency=curr, include_symbol=True)
     
     if "items" in final_data and isinstance(final_data["items"], list):
