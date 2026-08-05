@@ -225,13 +225,9 @@ class InvoiceParser(BaseDocumentParser):
                 if invoice_data["invoice_number"] == "N/A" and idx + 1 < len(lines):
                     val_line = lines[idx + 1].strip()
                     val_clean = val_line.replace('*', '').strip()
-                    val_clean = re.sub(r'\[[A-Z0-9_]+_\d+\]', '', val_clean).strip()
-                    val_clean = re.sub(r'\b\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4}\b', '', val_clean).strip()
                     header_blacklist = {"KETERANGAN", "HARGA", "DESCRIPTION", "QTY", "TOTAL", "PAYABLE", "CUSTOMER", "PROJECT", "DUE", "NOTES", "NOTES:"}
-                    if val_clean and re.search(r'\d', val_clean) and not val_clean.startswith('08'):
+                    if val_clean and (re.search(r'\d', val_clean) or '[' in val_clean) and not val_clean.startswith('08'):
                         if not any(h in val_clean.upper() for h in header_blacklist):
-                            val_clean = re.sub(r'[oO]', '0', val_clean)
-                            val_clean = re.sub(r'[?]', '1', val_clean)
                             code_m = re.search(r'\b([A-Za-z0-9]{2,6}-[A-Za-z0-9]{2,6}(?:-[A-Za-z0-9]{3,20})+|[A-Za-z]{2,5}/\d{2,15}|[A-Za-z]{2,5}-\d{2,15})\b', val_clean)
                             if code_m:
                                 invoice_data["invoice_number"] = code_m.group(1)
@@ -611,12 +607,6 @@ def clean_final_invoice_data(final_data, raw_prompt=""):
                                 final_data["customer_name"] = f"{cust}, {found_org}"
                             break
                 break
-
-    # 4.5 Clean Date Tags / Date Strings from Invoice Number
-    inv_num_clean = re.sub(r'\[[A-Z0-9_]+_\d+\]', '', inv_num_val).strip()
-    inv_num_clean = re.sub(r'\b\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4}\b', '', inv_num_clean).strip()
-    if inv_num_clean:
-        final_data["invoice_number"] = inv_num_clean
 
     # 5. Date Preservation (Keep original date format from document; normalization only in Excel export)
     for date_key in ["invoice_date", "due_date"]:
