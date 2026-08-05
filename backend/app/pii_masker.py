@@ -36,7 +36,7 @@ PRICE_REGEX = re.compile(
 )
 
 NAME_CONTEXT_REGEX = re.compile(
-    r'\b(?:[Nn]ame|[Nn]ama|[Aa]ttn|[Aa]ttention|[Rr]ecipient|[Pp]enerima|[Ss]ender|[Pp]engirim|[Dd]ear|[Ss]incerely|[Yy]th|[Kk]epada|Invoice\s+for|Bill\s+to|Billed\s+to)\b[ \t]*[:.-]?[ \t]*\n?\s*([A-Za-z]+(?:[ \t]+[A-Za-z]+){0,3})',
+    r'\b(?:[Nn]ame|[Nn]ama|[Aa]ttn|[Aa]ttention|[Rr]ecipient|[Pp]enerima|[Ss]ender|[Pp]engirim|[Dd]ear|[Ss]incerely|[Yy]th|[Kk]epada|Invoice\s+for|Bill\s+to|Billed\s+to)\b[ \t]*[:.-]?[ \t]*\n?\s*([A-Za-z.]+(?:[ \t]+[A-Za-z.]+){0,4})',
     re.IGNORECASE
 )
 

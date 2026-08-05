@@ -108,7 +108,7 @@ class KTPParser(BaseDocumentParser):
             ktp_data["address"] = address
 
         # 7. RT/RW
-        rtrw_match = re.search(r'(?:RT/RW|RT\s*/\s*RW|RT|RW)\s*[:.-]?[ \t]*([0-9/\s-]+)', prompt, flags=re.IGNORECASE)
+        rtrw_match = re.search(r'(?:RT/RW|RT\s*/\s*RW|RTARW|RT-RW|RTRW|RT|RW)\s*[:.-]?[ \t]*([0-9/\s-]+)', prompt, flags=re.IGNORECASE)
         if rtrw_match:
             ktp_data["rt_rw"] = re.sub(r'^[:;.,\s-]+', '', rtrw_match.group(1)).strip()
 
@@ -124,7 +124,7 @@ class KTPParser(BaseDocumentParser):
                     break
 
         # 9. Kecamatan
-        kec_match = re.search(r'(?:Kecamatan|Kec)\s*[:.-]?[ \t]*([A-Za-z0-9_]+)', prompt, flags=re.IGNORECASE)
+        kec_match = re.search(r'(?:Kecamatan|Kecamalan|Kecamatar|Kec)\s*[:.-]?[ \t]*([A-Za-z0-9_]+)', prompt, flags=re.IGNORECASE)
         if kec_match:
             ktp_data["kecamatan"] = kec_match.group(1).strip()
 
