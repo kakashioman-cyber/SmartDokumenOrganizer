@@ -63,7 +63,7 @@ def clean_currency_ocr_typos(text: str) -> str:
     raw = re.sub(r'\bNo\s+Po\s+PO\s*(\d+)', r'No PO: PO-\1', raw, flags=re.IGNORECASE)
     raw = re.sub(r'\bINVIAN\s+(\d+)\s+(\d+)', r'INV/AN-\1/\2', raw, flags=re.IGNORECASE)
     raw = re.sub(r'\b(\d{4}-\d{2})\s+(\d{2})\b', r'\1-\2', raw)
-    raw = re.sub(r'\b([A-Z]{2,4})\s+([A-Z]{2,4})\s+(\d{3,4})\b', r'\1-\2-\3', raw)
+    raw = re.sub(r'\b(?!(?:RP|IDR|USD|SGD|EUR)\b)([A-Z]{2,4})\s+(?!(?:RP|IDR|USD|SGD|EUR)\b)([A-Z]{2,4})\s+(\d{3,4})\b', r'\1-\2-\3', raw, flags=re.IGNORECASE)
 
     lines = raw.split('\n')
     cleaned_lines = []

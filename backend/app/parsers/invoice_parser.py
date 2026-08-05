@@ -228,7 +228,8 @@ class InvoiceParser(BaseDocumentParser):
                     header_blacklist = {"KETERANGAN", "HARGA", "DESCRIPTION", "QTY", "TOTAL", "PAYABLE", "CUSTOMER", "PROJECT", "DUE", "NOTES", "NOTES:"}
                     for tok in tokens:
                         tok_clean = tok.replace('*', '')
-                        if len(tok_clean) >= 3 and re.search(r'\d', tok_clean) and not tok_clean.startswith('08') and not tok_clean.startswith('['):
+                        is_date = bool(re.search(r'\b\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4}\b', tok_clean))
+                        if len(tok_clean) >= 1 and re.search(r'\d', tok_clean) and not is_date and not tok_clean.startswith('08') and not tok_clean.startswith('['):
                             if tok_clean.upper() not in header_blacklist and not any(t in tok_clean for t in ["NAME_", "PHONE_", "ORG_"]):
                                 tok_clean = re.sub(r'[oO]', '0', tok_clean)
                                 tok_clean = re.sub(r'[?]', '1', tok_clean)
@@ -241,7 +242,8 @@ class InvoiceParser(BaseDocumentParser):
                     tokens = val_line.split()
                     for tok in tokens:
                         tok_clean = tok.replace('*', '')
-                        if len(tok_clean) >= 3 and re.search(r'\d', tok_clean) and not tok_clean.startswith('08') and not tok_clean.startswith('['):
+                        is_date = bool(re.search(r'\b\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4}\b', tok_clean))
+                        if len(tok_clean) >= 1 and re.search(r'\d', tok_clean) and not is_date and not tok_clean.startswith('08') and not tok_clean.startswith('['):
                             if not any(t in tok_clean for t in ["NAME_", "PHONE_", "ORG_", "DATE"]):
                                 tok_clean = re.sub(r'[oO]', '0', tok_clean)
                                 invoice_data["invoice_number"] = tok_clean
@@ -256,20 +258,20 @@ class InvoiceParser(BaseDocumentParser):
             if gen_inv_m:
                 invoice_data["invoice_number"] = gen_inv_m.group(1)
 
-        # 5. PO Number
-        po_match = re.search(r'(?:PO No|No\.?\s*PO|Nomor\s*PO|PO Number|PURCHASE ORDER|PO #|PO)\s*[:.#-]*[ \t]*\n?\s*([A-Z0-9_/.-]+|\[ID_\d+\])', prompt, flags=re.IGNORECASE)
+        # 5. PO Number (strict regex so POLO is never matched as PO)
+        po_match = re.search(r'(?:PO\s*No|No\.?\s*PO|Nomor\s*PO|PO\s*Number|PURCHASE\s*ORDER|PO\s*#|\bPO\s*[:.#-])\s*[ \t]*\n?\s*([A-Z0-9_/.-]+|\[ID_\d+\])', prompt, flags=re.IGNORECASE)
         if po_match:
             cand_po = po_match.group(1).strip()
             if cand_po.upper() not in ["DATE", "NUMBER", "DETAILS"] and re.search(r'\d', cand_po):
                 invoice_data["po_number"] = cand_po
 
-        # 6. Generic Dates Parser (ISO YYYY-MM-DD / Slashed DD/MM/YYYY / Text 20 June 2024 / Masked [DOB_x], [DATE_x])
-        date_pattern = r'(\[DOB_\d+\]|\[DATE_\d+\]|\b\d{4}[-./]\d{1,2}[-./]\d{1,2}\b|\b\d{1,2}[-./]\d{1,2}[-./]\d{2,4}\b|\b\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{2,4}\b|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},\s*\d{2,4}\b)'
+        # 6. Generic Dates Parser (Default due_date to N/A unless explicitly matched)
+        date_pattern = r'(\[DOB_\d+\]|\[DATE_\d+\]|\b(?:19|20)\d{2}[-./]\d{1,2}[-./]\d{1,2}\b|\b\d{1,2}[-./]\d{1,2}[-./](?:19|20)?\d{2}\b|\b\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{2,4}\b|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},\s*\d{2,4}\b)'
         dates = re.findall(date_pattern, prompt, re.IGNORECASE)
         valid_dates = [d for d in dates if not re.match(r'^\d+[.,]\d+$', d)]
         if valid_dates:
             invoice_data["invoice_date"] = valid_dates[0]
-            invoice_data["due_date"] = valid_dates[1] if len(valid_dates) > 1 else valid_dates[0]
+            invoice_data["due_date"] = "N/A"
 
         # Contextual Invoice / Order Date (e.g. Submitted on 01/01/2025, P.O. Date Apr 05, 2023)
         inv_date_m = re.search(r'(?:Submitted\s*on|Invoice\s*Date|Tanggal\s*Invoice|Tanggal|P\.?O\.?\s*Date|Order\s*Date)\s*[:.-]?\s*\n?\s*(\[DOB_\d+\]|\[DATE_\d+\]|\d{1,2}[-./\s][A-Za-z0-9]{2,9}[-./\s]\d{2,4}|\d{1,2}/\d{1,2}/\d{2,4}|[A-Za-z]{3}\s+\d{1,2},\s*\d{2,4})', prompt, flags=re.IGNORECASE)
@@ -296,11 +298,14 @@ class InvoiceParser(BaseDocumentParser):
         # 7. Generic Subtotal, Tax, Total Parser (4-Directional 360° Reader: Kanan, Bawah, Atas, Kiri)
         def find_financial_val(keywords, text_lines):
             def is_date_str(s):
-                return bool(re.search(r'^\d{4}-\d{2}-\d{2}', s) or re.search(r'^\d{2}/\d{2}/\d{4}', s))
+                s_clean = s.strip()
+                return bool(re.search(r'^\d{4}-\d{2}-\d{2}', s_clean) or re.search(r'^\d{2}/\d{2}/\d{4}', s_clean) or re.search(r'^(?:19|20)\d{2}$', s_clean))
 
             for kw in keywords:
                 for i, l in enumerate(text_lines):
                     if any(h in l.upper() for h in ["DESCRIPTION", "UNIT PRICE", "TOTAL PRICE", "GROSS AMT", "NET AMOUNT", "QTY"]):
+                        continue
+                    if kw.upper() in ["TOTAL", "TOTAL AMOUNT", "TOTAL COST"] and ("SUBTOTAL" in l.upper() or "SUB TOTAL" in l.upper()):
                         continue
                     if re.search(rf'\b{re.escape(kw)}\b', l, re.IGNORECASE):
                         # 1. Kanan (Right / After keyword on same line)
@@ -433,7 +438,7 @@ class InvoiceParser(BaseDocumentParser):
                 # 2. Extract SKU / Part No (e.g. AN-PLT-625, AN-PLT-397, SKU-123)
                 sku_val = "-"
                 sku_m = re.search(r'\b([A-Za-z0-9]{2,6}-[A-Za-z0-9]{2,6}(?:-\d{2,5})?)\b', l_clean)
-                if sku_m and re.search(r'\d', sku_m.group(1)):
+                if sku_m and re.search(r'\d', sku_m.group(1)) and not any(c in sku_m.group(1).upper() for c in ["-RP", "RP-", "-IDR", "IDR-", "-USD", "USD-", "-SGD", "SGD-"]):
                     sku_val = sku_m.group(1)
 
                 # 3. Strip leading item index number (e.g. '1 ', '2.', '3 ') from l_clean
@@ -466,15 +471,14 @@ class InvoiceParser(BaseDocumentParser):
                     # Try matching cand_q * unit_price == total_price
                     found_math = False
                     cand_q_f = parse_float_digits(qty_val)
-                    if cand_q_f > 0:
+                    if 1 <= cand_q_f <= 5000:
                         for j, (w_p, ct_p, v_p) in enumerate(num_tokens):
                             for k, (w_t, ct_t, v_t) in enumerate(num_tokens):
-                                if k > j and v_p != cand_q_f:
-                                    if abs(cand_q_f * v_p - v_t) < 0.5 and v_t >= v_p:
-                                        price_val = ct_p
-                                        tot_val = ct_t
-                                        found_math = True
-                                        break
+                                if k != j and abs(cand_q_f * v_p - v_t) < 0.5 and v_t >= v_p:
+                                    price_val = ct_p
+                                    tot_val = ct_t
+                                    found_math = True
+                                    break
                             if found_math: break
 
                     if not found_math:
@@ -483,13 +487,12 @@ class InvoiceParser(BaseDocumentParser):
                                 for j, (w_p, ct_p, v_p) in enumerate(num_tokens):
                                     if j != i:
                                         for k, (w_t, ct_t, v_t) in enumerate(num_tokens):
-                                            if k != i and k != j and k > j:
-                                                if abs(v_q * v_p - v_t) < 0.5 and v_t >= v_p:
-                                                    qty_val = str(int(v_q)) if v_q == int(v_q) else str(v_q)
-                                                    price_val = ct_p
-                                                    tot_val = ct_t
-                                                    found_math = True
-                                                    break
+                                            if k != i and k != j and abs(v_q * v_p - v_t) < 0.5 and v_t >= v_p:
+                                                qty_val = str(int(v_q)) if v_q == int(v_q) else str(v_q)
+                                                price_val = ct_p
+                                                tot_val = ct_t
+                                                found_math = True
+                                                break
                                         if found_math: break
                                 if found_math: break
 
@@ -503,6 +506,7 @@ class InvoiceParser(BaseDocumentParser):
                         if ct_token == price_val or ct_token == tot_val:
                             desc_val = desc_val.replace(w_token, "")
                     desc_val = re.sub(r'\b' + re.escape(qty_val) + r'\s*(?:PCS|Pcs|pcs|UNIT|Unit|unit|SET|Set|set|KG|Kg|kg|BOX|Box|box|LEMBAR|Lembar|PACK|Pack|pack|ROLL|Roll|roll)\b', '', desc_val, flags=re.IGNORECASE)
+                    desc_val = re.sub(r'\b' + re.escape(qty_val) + r'\b', '', desc_val)
                     desc_val = re.sub(r'\b0%\s*0\b', '', desc_val)
                     desc_val = re.sub(r'\b0%\b', '', desc_val)
                     desc_val = re.sub(r'\b(?:Rp\.?|RP|AP|RF|S\$|\$)\b', '', desc_val, flags=re.IGNORECASE)
@@ -663,8 +667,11 @@ def clean_final_invoice_data(final_data, raw_prompt=""):
     final_data["tax"] = tax_pct_str
     
     tot_val = final_data.get("total_amount") or sub_val
-    if sub_f > 0 and (tot_f <= 0 or tot_f < sub_f):
-        tot_val = sub_val
+    if sub_f > 0:
+        if tax_amt_flt > 0:
+            tot_val = sub_f + tax_amt_flt
+        elif tot_f <= 0 or tot_f < sub_f:
+            tot_val = sub_val
     final_data["total_amount"] = format_currency(tot_val, currency=curr, include_symbol=True)
     
     if "items" in final_data and isinstance(final_data["items"], list):
@@ -680,11 +687,14 @@ def clean_final_invoice_data(final_data, raw_prompt=""):
 
                 # Extract SKU from Part No or Description if SKU is missing
                 sku_val = str(item.get("sku") or item.get("part_no") or item.get("part_number") or item.get("code") or item.get("item_code") or "").strip()
+                if any(c in sku_val.upper() for c in ["-RP", "RP-", "-IDR", "IDR-", "-USD", "USD-", "-SGD", "SGD-"]):
+                    sku_val = "-"
                 if not sku_val or sku_val in ["-", "N/A", "null", "None"]:
                     desc = str(item.get("description", ""))
                     m_sku = re.search(r'\b([A-Za-z0-9]{3,6}-[A-Za-z0-9]{3,6}(?:-\d{3,4})?|\d{4,6})\b', desc)
                     if m_sku and m_sku.group(1).upper() not in ["INCH", "BOX", "UNIT", "PCS", "PACK", "ROLL", "EACH"] and re.search(r'\d', m_sku.group(1)):
-                        sku_val = m_sku.group(1)
+                        if not any(c in m_sku.group(1).upper() for c in ["-RP", "RP-", "-IDR", "IDR-", "-USD", "USD-", "-SGD", "SGD-"]):
+                            sku_val = m_sku.group(1)
                 item["sku"] = sku_val if sku_val else "-"
 
                 desc = str(item.get("description", "")).strip()
