@@ -3,40 +3,37 @@ from .base_parser import BaseDocumentParser
 
 def format_ktp_name(name: str) -> str:
     """
-    Universal, zero-hardcode name sanitizer.
-    Works for any document type, any nationality (Indonesian, Passport, International),
-    and any name structure. Performs standard whitespace normalization and CamelCase separation.
-    No hardcoded dictionaries, no name lists, no language assumptions.
+    Format extracted name string generically.
+    Performs standard whitespace trimming and CamelCase separation.
+    No hardcoded name lists or hardcoded suffixes.
     """
     if not name or name == 'N/A' or name.startswith('[NAME_'):
         return name
         
     s = name.strip()
 
-    # Split CamelCase if mixed case exists (e.g. JohnSmith -> John Smith)
+    # Split CamelCase if mixed case exists (e.g. FirstLast -> First Last)
     if re.search(r'[a-z][A-Z]', s):
-        s = re.sub(r'([a-z])([A-Z])', r'\1 \2', s)
+        return re.sub(r'([a-z])([A-Z])', r'\1 \2', s)
 
-    return re.sub(r'\s+', ' ', s).strip()
+    return s
 
 def format_ktp_address(addr: str) -> str:
     """
-    Universal, zero-hardcode address sanitizer.
+    Format extracted address string generically.
     Applies standard structural punctuation spacing (JL. and NO.).
     No hardcoded place or street names.
     """
     if not addr or addr == 'N/A' or addr.startswith('[ADDRESS_'):
         return addr
 
-    s = addr.strip()
+    # 1. Format street prefix (JL / JALAN)
+    addr = re.sub(r'^(?:JL\.?|JALAN)\s*([A-Za-z0-9])', r'JL. \1', addr, flags=re.IGNORECASE)
 
-    # 1. Standardize street prefix (JL / JLN / JALAN)
-    s = re.sub(r'^(?:JL\.?|JLN\.?|JALAN)\s*', 'JL. ', s, flags=re.IGNORECASE)
+    # 2. Format house/building number (NO. <digits>)
+    addr = re.sub(r'\b(NO|NOMOR)\.?\s*(\d+)', r'NO. \2', addr, flags=re.IGNORECASE)
 
-    # 2. Standardize house/building number prefix (NO. <number>)
-    s = re.sub(r'\b(?:NO|NOMOR)\.?\s*(\d+[A-Za-z]?)', r'NO. \1', s, flags=re.IGNORECASE)
-
-    return re.sub(r'\s+', ' ', s).strip()
+    return re.sub(r'\s+', ' ', addr).strip()
 
 class KTPParser(BaseDocumentParser):
     """Dedicated Modular Parser for Indonesian Identity Cards (KTP)."""
