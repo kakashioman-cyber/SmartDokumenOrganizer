@@ -161,6 +161,11 @@ def verify_and_reconcile_invoice_math(invoice_data: dict) -> dict:
     tax_ocr = parse_float_digits(invoice_data.get("tax_amount") or invoice_data.get("tax"))
     tot_ocr = parse_float_digits(invoice_data.get("total_amount"))
 
+    # Fix swapped subtotal and tax_amount (Subtotal is ALWAYS larger than Tax Amount)
+    if s_ocr > 0 and tax_ocr > 0 and s_ocr < tax_ocr:
+        if tot_ocr > 0 and abs((s_ocr + tax_ocr) - tot_ocr) < 10:
+            s_ocr, tax_ocr = tax_ocr, s_ocr
+
     # Cross-check: If sum_items_total matches tot_ocr - tax_ocr (e.g. 2325000 + 258750 = 2583750)
     # but s_ocr was mis-extracted as 175000 (a single item total), prioritize sum_items_total!
     if sum_items_total > 0 and tot_ocr > sum_items_total and tax_ocr > 0:
@@ -180,21 +185,22 @@ def verify_and_reconcile_invoice_math(invoice_data: dict) -> dict:
     rate_pct_str = "0%"
     rate_float = 0.0
 
-    raw_tax_str = str(invoice_data.get("tax") or "").strip()
-    m_pct = re.search(r'(\d{1,2}(?:\.\d+)?)\s*%', raw_tax_str)
-    if not m_pct and invoice_data.get("tax_percent"):
-        m_pct = re.search(r'(\d{1,2}(?:\.\d+)?)\s*%', str(invoice_data.get("tax_percent")))
+    if sub_flt > 0 and tax_amt_flt > 0:
+        calc_r = round((tax_amt_flt / sub_flt) * 100)
+        if 1 <= calc_r <= 50 and abs((sub_flt * (calc_r / 100.0)) - tax_amt_flt) < 10:
+            rate_pct_str = f"{calc_r}%"
+            rate_float = calc_r / 100.0
 
-    if m_pct:
-        rate_num = float(m_pct.group(1))
-        rate_pct_str = f"{int(rate_num)}%" if rate_num.is_integer() else f"{rate_num}%"
-        rate_float = rate_num / 100.0
-    else:
-        if sub_flt > 0 and tax_amt_flt > 0:
-            calc_r = round((tax_amt_flt / sub_flt) * 100)
-            if 1 <= calc_r <= 50:
-                rate_pct_str = f"{calc_r}%"
-                rate_float = calc_r / 100.0
+    if rate_float == 0.0:
+        raw_tax_str = str(invoice_data.get("tax") or "").strip()
+        m_pct = re.search(r'(\d{1,2}(?:\.\d+)?)\s*%', raw_tax_str)
+        if not m_pct and invoice_data.get("tax_percent"):
+            m_pct = re.search(r'(\d{1,2}(?:\.\d+)?)\s*%', str(invoice_data.get("tax_percent")))
+
+        if m_pct:
+            rate_num = float(m_pct.group(1))
+            rate_pct_str = f"{int(rate_num)}%" if rate_num.is_integer() else f"{rate_num}%"
+            rate_float = rate_num / 100.0
 
     if sub_flt > 0:
         if tax_amt_flt > 0 and tot_ocr > 0 and abs((sub_flt + tax_amt_flt) - tot_ocr) < 10:

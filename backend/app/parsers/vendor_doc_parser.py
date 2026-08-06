@@ -1,6 +1,7 @@
 import re
 from .base_parser import BaseDocumentParser
 from .invoice_parser import clean_ocr_typos
+from ..verification import parse_float_digits
 
 class VendorDocumentParser(BaseDocumentParser):
     """Modular Parser for Procurement & Vendor Documents (Dokumen Pengadaan / Vendor / Surat Jalan)."""
@@ -204,179 +205,185 @@ class VendorDocumentParser(BaseDocumentParser):
                 vendor_data["total_amount"] = str(round(s_f - d_f, 2))
 
         # 9. Header-Bounded SKU Table Parser with Line-Usage Tracking & Math Candidate Filtering
-        from ..verification import parse_float_digits
         def fmt_num(n):
             return f"{int(round(n)):,}".replace(',', '.') if n >= 1000 else str(int(round(n)))
 
-        header_i = 0
-        for i, l in enumerate(lines):
-            if any(kw in l.upper() for kw in ['PART NO', 'DESKRIPSI', 'QTY', 'SATUAN', 'HARGA SATUAN', 'JUMLAH']):
-                header_i = i
-                break
-
-        sku_rows = []
-        for idx, l in enumerate(lines):
-            if idx <= header_i:
-                continue
-            m = re.search(r'\b(?!\d{4}-\d{2}-\d{2}\b)(?!\d{2}-\d{2}-\d{4}\b)([A-Z0-9]{2,6}-[A-Z0-9]{2,6}-\d{2,4})\b', l)
-            if m:
-                sku_rows.append((idx, m.group(1)))
-
-        all_skus = [s[1] for s in sku_rows]
-        parsed_items = []
-        used_line_indices = set()
-
-        def clean_line_for_dim_nums(txt):
-            c = re.sub(r'^\s*\d+[\s.]+', '', txt.strip())
-            for s_item in all_skus:
-                c = c.replace(s_item, '')
-            c = re.sub(r'\b\d{4}-\d{2}-\d{2}\b|\b\d{2}/\d{2}/\d{4}\b', '', c)
-            c = re.sub(r'\b\d+\s*(?:inch|in|mm|cm|m)\b', '', c, flags=re.IGNORECASE)
-            c = re.sub(r'\bM\d+\b|\b\d+\s*[×x*]\s*\d+\b', '', c, flags=re.IGNORECASE)
-            return c
-
-        footer_i = len(lines)
-        for i, l in enumerate(lines):
-            if i > header_i and any(kw in l.upper() for kw in ['SUBTOTAL', 'PPN', 'TOTAL', 'TAX', 'VAT', 'AMOUNT DUE', 'BALANCE DUE']):
-                footer_i = min(footer_i, i)
-
-        for k, (line_i, sku) in enumerate(sku_rows):
-            start_i = line_i
-            if k > 0:
-                prev_sku_line = sku_rows[k-1][0]
-                start_i = max(prev_sku_line + 1, line_i - 2)
-                
-            end_i = min(footer_i - 1, line_i + 2)
-            if k < len(sku_rows) - 1:
-                next_sku_line = sku_rows[k+1][0]
-                end_i = next_sku_line - 1
-                
-            candidate_lines = []
-            for idx_l in range(start_i, end_i + 1):
-                if (idx_l not in used_line_indices or idx_l == line_i) and idx_l < footer_i:
-                    candidate_lines.append((idx_l, lines[idx_l]))
-
-            best_math = None
-            best_score = -1
-            best_cl_idx = None
-            best_desc_extra = ''
-
-            for cl_idx, cl_txt in candidate_lines:
-                clean_cl = clean_line_for_dim_nums(cl_txt)
-                tokens = clean_cl.split()
-                nums = [parse_float_digits(t) for t in tokens if parse_float_digits(t) > 0]
-                
-                curr_line_clean = clean_line_for_dim_nums(lines[line_i])
-                curr_nums = [parse_float_digits(t) for t in curr_line_clean.split() if parse_float_digits(t) > 0]
-
-                all_nums = list(set(nums + curr_nums))
-                cand_q_list = list(set([1] + [n for n in all_nums if 1 <= n <= 1000]))
-                cand_tot_list = list(all_nums)
-
-                for q in cand_q_list:
-                    for p in all_nums:
-                        if p >= 10 and (q * p) <= 100000000:
-                            cand_tot_list.append(q * p)
-                            
-                for p in all_nums:
-                    if p >= 10:
-                        for tot in all_nums:
-                            if tot > p:
-                                calc_q = round(tot / p)
-                                if 1 <= calc_q <= 1000 and abs((calc_q * p) - tot) < 5:
-                                    cand_q_list.append(calc_q)
-
-                for q in cand_q_list:
-                    if 1 <= q <= 1000:
-                        for p in all_nums:
-                            for tot in cand_tot_list:
-                                if q > 1 and p >= tot:
-                                    continue
-                                
-                                diff = abs((q * p) - tot)
-                                is_valid_math = False
-                                if tot < 1000 and diff == 0:
-                                    is_valid_math = True
-                                elif tot >= 1000 and (diff < 5 or (tot >= 100000 and (diff / float(tot)) < 0.001)):
-                                    is_valid_math = True
-
-                                if is_valid_math and tot >= p and (q != tot or q == 1):
-                                    if p < 10 and q <= 2 and tot < 10:
-                                        continue
-                                    
-                                    dist_penalty = abs(cl_idx - line_i) * 1000
-                                    score = tot - dist_penalty
-                                    
-                                    if p in curr_nums and tot in curr_nums:
-                                        if q in curr_nums and q > 1:
-                                            score += 500000000000
-                                        score += 100000000000
-                                    elif cl_idx == line_i:
-                                        score += 50000000000
-                                    elif tot in all_nums:
-                                        score += 10000000000
-                                    elif (q in curr_nums and p in curr_nums):
-                                        score += 1000000000
-                                        
-                                    if cl_idx <= line_i:
-                                        score += 500000000
-                                    if q > 1 and p < tot:
-                                        score += 500000000
-                                    if diff == 0:
-                                        score += 50000000
-                                    if score > best_score:
-                                        best_score = score
-                                        best_math = (q, p, tot)
-                                        best_cl_idx = cl_idx
-                                        best_desc_extra = cl_txt
-
-            if not best_math:
-                continue
-                
-            q_val, p_val, tot_val = best_math
-
-            if best_cl_idx is not None:
-                used_line_indices.add(best_cl_idx)
-            used_line_indices.add(line_i)
-
-            combined_desc_text = f"{lines[line_i]} {best_desc_extra}" if best_cl_idx != line_i else lines[line_i]
-            unit = 'PCS'
-            m_unit = re.search(r'\b(ROLL|PCS|UNIT|BOX|SET|KG|PACK|LOT)\b', combined_desc_text, re.IGNORECASE)
-            if m_unit:
-                unit = m_unit.group(1).upper()
-
-            desc = combined_desc_text
-            for s_item in all_skus:
-                desc = desc.replace(s_item, '')
-            desc = re.sub(r'^\d+[\.\s]+', '', desc.strip())
-            desc_tokens = desc.split()
-            clean_words = []
-            for i_w, w in enumerate(desc_tokens):
-                w_flt = parse_float_digits(w)
-                next_w = desc_tokens[i_w + 1].lower() if i_w + 1 < len(desc_tokens) else ""
-                prev_w = desc_tokens[i_w - 1].lower() if i_w > 0 else ""
-                is_dimension = next_w in ["inch", "in", "mm", "cm", "m"] or re.match(r'^M\d+$', w, re.IGNORECASE) or prev_w in ['×', 'x', '*'] or w in ['×', 'x', '*']
-                if not is_dimension and (w.upper() == unit or w_flt in [q_val, p_val, tot_val] or abs(w_flt - tot_val) < 1000 or abs(w_flt - p_val) < 0.5):
-                    continue
-                clean_words.append(w)
-            desc_clean = ' '.join(clean_words).strip()
-            desc_clean = re.sub(r'^\d{3,}\s*', '', desc_clean)
-
-            parsed_items.append({
-                'no': str(k + 1),
-                'sku': sku,
-                'description': desc_clean,
-                'qty': str(int(q_val)),
-                'unit': unit,
-                'unit_price': fmt_num(p_val),
-                'total': fmt_num(tot_val)
-            })
-
-        if parsed_items:
+        if base_data.get("items"):
+            parsed_items = base_data.get("items")
             vendor_data["items"] = parsed_items
             vendor_data["quantity"] = str(len(parsed_items))
             vendor_data["item_name"] = ", ".join([it["description"] for it in parsed_items if it.get("description")])
             vendor_data["unit_price"] = ", ".join([str(it.get("unit_price", "0")) for it in parsed_items if it.get("unit_price")])
+        else:
+            header_i = 0
+            for i, l in enumerate(lines):
+                if any(kw in l.upper() for kw in ['PART NO', 'DESKRIPSI', 'QTY', 'SATUAN', 'HARGA SATUAN', 'JUMLAH']):
+                    header_i = i
+                    break
+
+            sku_rows = []
+            for idx, l in enumerate(lines):
+                if idx <= header_i:
+                    continue
+                m = re.search(r'\b(?!\d{4}-\d{2}-\d{2}\b)(?!\d{2}-\d{2}-\d{4}\b)([A-Z0-9]{2,6}-[A-Z0-9]{2,6}-\d{2,4})\b', l)
+                if m:
+                    sku_rows.append((idx, m.group(1)))
+
+            all_skus = [s[1] for s in sku_rows]
+            parsed_items = []
+            used_line_indices = set()
+
+            def clean_line_for_dim_nums(txt):
+                c = re.sub(r'^\s*\d+[\s.]+', '', txt.strip())
+                for s_item in all_skus:
+                    c = c.replace(s_item, '')
+                c = re.sub(r'\b\d{4}-\d{2}-\d{2}\b|\b\d{2}/\d{2}/\d{4}\b', '', c)
+                c = re.sub(r'\b\d+\s*(?:inch|in|mm|cm|m)\b', '', c, flags=re.IGNORECASE)
+                c = re.sub(r'\bM\d+\b|\b\d+\s*[×x*]\s*\d+\b', '', c, flags=re.IGNORECASE)
+                return c
+
+            footer_i = len(lines)
+            for i, l in enumerate(lines):
+                if i > header_i and any(kw in l.upper() for kw in ['SUBTOTAL', 'PPN', 'TOTAL', 'TAX', 'VAT', 'AMOUNT DUE', 'BALANCE DUE']):
+                    footer_i = min(footer_i, i)
+
+            for k, (line_i, sku) in enumerate(sku_rows):
+                start_i = line_i
+                if k > 0:
+                    prev_sku_line = sku_rows[k-1][0]
+                    start_i = max(prev_sku_line + 1, line_i - 2)
+                    
+                end_i = min(footer_i - 1, line_i + 2)
+                if k < len(sku_rows) - 1:
+                    next_sku_line = sku_rows[k+1][0]
+                    end_i = next_sku_line - 1
+                    
+                candidate_lines = []
+                for idx_l in range(start_i, end_i + 1):
+                    if (idx_l not in used_line_indices or idx_l == line_i) and idx_l < footer_i:
+                        candidate_lines.append((idx_l, lines[idx_l]))
+
+                best_math = None
+                best_score = -1
+                best_cl_idx = None
+                best_desc_extra = ''
+
+                for cl_idx, cl_txt in candidate_lines:
+                    clean_cl = clean_line_for_dim_nums(cl_txt)
+                    tokens = clean_cl.split()
+                    nums = [parse_float_digits(t) for t in tokens if parse_float_digits(t) > 0]
+                    
+                    curr_line_clean = clean_line_for_dim_nums(lines[line_i])
+                    curr_nums = [parse_float_digits(t) for t in curr_line_clean.split() if parse_float_digits(t) > 0]
+
+                    all_nums = list(set(nums + curr_nums))
+                    cand_q_list = list(set([1] + [n for n in all_nums if 1 <= n <= 1000]))
+                    cand_tot_list = list(all_nums)
+
+                    for q in cand_q_list:
+                        for p in all_nums:
+                            if p >= 10 and (q * p) <= 100000000:
+                                cand_tot_list.append(q * p)
+                                
+                    for p in all_nums:
+                        if p >= 10:
+                            for tot in all_nums:
+                                if tot > p:
+                                    calc_q = round(tot / p)
+                                    if 1 <= calc_q <= 1000 and abs((calc_q * p) - tot) < 5:
+                                        cand_q_list.append(calc_q)
+
+                    for q in cand_q_list:
+                        if 1 <= q <= 1000:
+                            for p in all_nums:
+                                for tot in cand_tot_list:
+                                    if q > 1 and p >= tot:
+                                        continue
+                                    
+                                    diff = abs((q * p) - tot)
+                                    is_valid_math = False
+                                    if tot < 1000 and diff == 0:
+                                        is_valid_math = True
+                                    elif tot >= 1000 and (diff < 5 or (tot >= 100000 and (diff / float(tot)) < 0.001)):
+                                        is_valid_math = True
+
+                                    if is_valid_math and tot >= p and (q != tot or q == 1):
+                                        if p < 10 and q <= 2 and tot < 10:
+                                            continue
+                                        
+                                        dist_penalty = abs(cl_idx - line_i) * 1000
+                                        score = tot - dist_penalty
+                                        
+                                        if p in curr_nums and tot in curr_nums:
+                                            if q in curr_nums and q > 1:
+                                                score += 500000000000
+                                            score += 100000000000
+                                        elif cl_idx == line_i:
+                                            score += 50000000000
+                                        elif tot in all_nums:
+                                            score += 10000000000
+                                        elif (q in curr_nums and p in curr_nums):
+                                            score += 1000000000
+                                            
+                                        if cl_idx <= line_i:
+                                            score += 500000000
+                                        if q > 1 and p < tot:
+                                            score += 500000000
+                                        if diff == 0:
+                                            score += 50000000
+                                        if score > best_score:
+                                            best_score = score
+                                            best_math = (q, p, tot)
+                                            best_cl_idx = cl_idx
+                                            best_desc_extra = cl_txt
+
+                if not best_math:
+                    continue
+                    
+                q_val, p_val, tot_val = best_math
+
+                if best_cl_idx is not None:
+                    used_line_indices.add(best_cl_idx)
+                used_line_indices.add(line_i)
+
+                combined_desc_text = f"{lines[line_i]} {best_desc_extra}" if best_cl_idx != line_i else lines[line_i]
+                unit = 'PCS'
+                m_unit = re.search(r'\b(ROLL|PCS|UNIT|BOX|SET|KG|PACK|LOT)\b', combined_desc_text, re.IGNORECASE)
+                if m_unit:
+                    unit = m_unit.group(1).upper()
+
+                desc = combined_desc_text
+                for s_item in all_skus:
+                    desc = desc.replace(s_item, '')
+                desc = re.sub(r'^\d+[\.\s]+', '', desc.strip())
+                desc_tokens = desc.split()
+                clean_words = []
+                for i_w, w in enumerate(desc_tokens):
+                    w_flt = parse_float_digits(w)
+                    next_w = desc_tokens[i_w + 1].lower() if i_w + 1 < len(desc_tokens) else ""
+                    prev_w = desc_tokens[i_w - 1].lower() if i_w > 0 else ""
+                    is_dimension = next_w in ["inch", "in", "mm", "cm", "m"] or re.match(r'^M\d+$', w, re.IGNORECASE) or prev_w in ['×', 'x', '*'] or w in ['×', 'x', '*']
+                    if not is_dimension and (w.upper() == unit or w_flt in [q_val, p_val, tot_val] or abs(w_flt - tot_val) < 1000 or abs(w_flt - p_val) < 0.5):
+                        continue
+                    clean_words.append(w)
+                desc_clean = ' '.join(clean_words).strip()
+                desc_clean = re.sub(r'^\d{3,}\s*', '', desc_clean)
+
+                parsed_items.append({
+                    'no': str(k + 1),
+                    'sku': sku,
+                    'description': desc_clean,
+                    'qty': str(int(q_val)),
+                    'unit': unit,
+                    'unit_price': fmt_num(p_val),
+                    'total': fmt_num(tot_val)
+                })
+
+            if parsed_items:
+                vendor_data["items"] = parsed_items
+                vendor_data["quantity"] = str(len(parsed_items))
+                vendor_data["item_name"] = ", ".join([it["description"] for it in parsed_items if it.get("description")])
+                vendor_data["unit_price"] = ", ".join([str(it.get("unit_price", "0")) for it in parsed_items if it.get("unit_price")])
 
         # Sanitize & apply global math verification engine
         from .invoice_parser import clean_final_invoice_data

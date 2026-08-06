@@ -141,16 +141,16 @@ class InvoiceParser(BaseDocumentParser):
                     invoice_data["vendor_name"] = clean_l
                     break
                 l_upper = clean_l.upper()
-                if any(kw in l_upper for kw in ["INVOICE", "NOTA", "STRUK", "PI "]):
+                if any(kw in l_upper for kw in ["INVOICE #", "NO INVOICE", "NOTA #", "STRUK #"]):
                     v = re.sub(r'^(INVOICE|NOTA|STRUK)\s*', '', clean_l, flags=re.IGNORECASE).strip()
                     v = re.split(r'\b(NUMBER|NO|DATE|INV|OICE)\b', v, flags=re.IGNORECASE)[0].strip()
                     if len(v) > 2 and v.upper() not in ["FOR", "DETAILS"]:
                         invoice_data["vendor_name"] = v
                         break
-                elif not any(kw in l_upper for kw in ["SUBMITTED", "KEPADA", "BILL TO", "INVOICE FOR", "TANGGAL", "DATE", "PHONE", "TELP", "JALAN", "JL", "RUKO", "NO PART", "PART NO", "DESKRIPSI", "SATUAN", "HARGA", "JUMLAH", "QTY"]) and len(clean_l) > 3:
+                elif not any(kw in l_upper for kw in ["SUBMITTED", "KEPADA", "BILL TO", "INVOICE FOR", "TANGGAL", "DATE", "PHONE", "TELP", "JALAN", "JL", "RUKO", "NO PART", "PART NO", "DESKRIPSI", "SATUAN", "HARGA", "JUMLAH", "QTY", "PRODUCT", "DESCRIPTION", "PRICE", "TOTAL", "AMOUNT"]) and len(clean_l) > 3:
                     v = re.split(r'\b(INVOICE|INV|NUMBER|NOTA|STRUK|DATE|TELP|EMAIL|JALAN|JL|JL\.|JAKARTA|RUKO|GEDUNG)\b', clean_l, flags=re.IGNORECASE)[0].strip()
                     v = re.sub(r'^[|:\s\-+]+|[|:\s\-+]+$', '', v).strip()
-                    if len(v) > 2 and v.upper() not in ["FOR", "DETAILS", "PURCHASE ORDER", "PURCHASEORDER", "PURCHASE", "ORDER", "SURAT JALAN", "FAKTUR", "INVOICE", "NO PART NO DESKRIPSI QTY SATUAN HARGA SATUAN JUMLAH"]:
+                    if len(v) > 2 and not any(kw in v.upper() for kw in ["FOR", "DETAILS", "PURCHASE ORDER", "PURCHASEORDER", "PURCHASE", "ORDER", "SURAT JALAN", "FAKTUR", "INVOICE", "DESKRIPSI", "SATUAN", "HARGA", "JUMLAH"]):
                         invoice_data["vendor_name"] = v
                         break
 
@@ -409,7 +409,83 @@ class InvoiceParser(BaseDocumentParser):
                         pass
             v_i += 1
 
-        # 2. Single-line Horizontal Table Scanner (Runs if vertical scanner found 0 items)
+        # 2. 2-Line Interleaved Table Scanner (Handles OCR tables where Qty/Unit/Price/Total and Description are on alternating adjacent lines)
+        if not invoice_data["items"]:
+            start_i = header_idx if header_idx != -1 else 0
+            alt_i = start_i
+            while alt_i < len(lines):
+                l1 = lines[alt_i].strip()
+                if any(l1.upper().startswith(fk) for fk in footer_kws) and not any(h in l1.upper() for h in ["TOTAL COST", "TOTAL PRICE", "JUMLAH HARGA"]):
+                    break
+                l2 = lines[alt_i+1].strip() if alt_i + 1 < len(lines) else ""
+                
+                def try_parse_pair(num_line, desc_line):
+                    u_m = re.search(unit_pattern, num_line, re.IGNORECASE)
+                    unit = u_m.group(1).upper() if u_m else "PCS"
+                    
+                    sku_m = re.search(r'\b([A-Za-z0-9]{2,6}-[A-Za-z0-9]{2,6}(?:-\d{2,5})?)\b', desc_line + " " + num_line)
+                    sku = sku_m.group(1) if sku_m else "-"
+                    
+                    raw_nums = re.findall(r'[\d.,]{1,15}', num_line)
+                    floats = []
+                    for n in raw_nums:
+                        c_n = n.replace('.', '').replace(',', '')
+                        if c_n.isdigit():
+                            floats.append((n, float(c_n)))
+                            
+                    qty, price, total = None, None, None
+                    for i_q, (_, q_v) in enumerate(floats):
+                        for i_p, (p_str, p_v) in enumerate(floats):
+                            if i_p != i_q:
+                                for i_t, (t_str, t_v) in enumerate(floats):
+                                    if i_t != i_q and i_t != i_p:
+                                        if abs(q_v * p_v - t_v) < 1.0 and t_v >= p_v and q_v >= 1:
+                                            qty, price, total = str(int(q_v)), p_str, t_str
+                                            break
+                                if qty: break
+                        if qty: break
+                        
+                    if not qty:
+                        q_cand = re.search(r'^\s*(\d{1,4})\b|\b(\d{1,4})\s*$', desc_line)
+                        if q_cand:
+                            q_val = float(q_cand.group(1) or q_cand.group(2))
+                            for i_p, (p_str, p_v) in enumerate(floats):
+                                for i_t, (t_str, t_v) in enumerate(floats):
+                                    if i_t != i_p and abs(q_val * p_v - t_v) < 1.0 and t_v >= p_v:
+                                        qty, price, total = str(int(q_val)), p_str, t_str
+                                        break
+                                if qty: break
+
+                    desc = desc_line
+                    if sku != "-": desc = desc.replace(sku, "")
+                    desc = re.sub(r'^\s*\d+[\s.]+', '', desc)
+                    desc = re.sub(r'\b\d{1,4}\s*$', '', desc).strip(' ,.-')
+                    
+                    if qty and price and total and desc and desc.upper() not in ["NO.", "NO", "DESKRIPSI", "PART NO", "NO PART NO", "QUANTITY", "UNIT PRICE", "TOTAL"]:
+                        return {
+                            "no": str(len(invoice_data["items"]) + 1),
+                            "sku": sku,
+                            "description": desc,
+                            "qty": qty,
+                            "unit": unit,
+                            "unit_price": format_currency(price, currency=invoice_data["currency"], include_symbol=False),
+                            "total": format_currency(total, currency=invoice_data["currency"], include_symbol=False)
+                        }
+                    return None
+
+                p1 = try_parse_pair(l1, l2)
+                if p1:
+                    invoice_data["items"].append(p1)
+                    alt_i += 2
+                    continue
+                p2 = try_parse_pair(l2, l1)
+                if p2:
+                    invoice_data["items"].append(p2)
+                    alt_i += 2
+                    continue
+                alt_i += 1
+
+        # 3. Single-line Horizontal Table Scanner (Runs if vertical/interleaved scanners found 0 items)
         if not invoice_data["items"]:
             for l in item_lines:
                 l_strip = l.strip()
