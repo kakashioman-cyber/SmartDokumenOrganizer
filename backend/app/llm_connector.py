@@ -445,7 +445,7 @@ def analyze_document_image(image_bytes: bytes, doc_type: str = "auto", provider:
             logger.info("🔑 Using Default API Keys from .env environment file.")
 
         # 1. Google Gemini Vision API (Primary Cloud AI Vision Engine)
-        if provider in ["gemini", "google", "cloud_vision", "auto", "ollama", "local_vision", "deepseek"]:
+        if provider in ["gemini", "google", "cloud_vision", "auto"]:
             if not gemini_key or "isi_dengan" in gemini_key:
                 # If Gemini key isn't provided, fall back to Local Rule Preprocessing Engine
                 from . import ocr_engine
@@ -459,83 +459,15 @@ def analyze_document_image(image_bytes: bytes, doc_type: str = "auto", provider:
                 return res_data, effective_type
 
             logger.info("Calling Direct Google Gemini Vision API...")
-            if not openai_key or "isi_dengan" in openai_key:
-                return {"error": "❌ Kunci OPENAI_API_KEY belum valid. Silakan masukkan OpenAI API Key resmi."}, effective_type
-            
-            logger.info("Calling OpenAI GPT-4o Vision API...")
-            try:
-                url = "https://api.openai.com/v1/chat/completions"
-                prompt_text = f"Extract structured JSON for document type: '{effective_type}'. Return ONLY valid JSON."
-                payload = {
-                    "model": "gpt-4o",
-                    "messages": [{
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt_text},
-                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_img}"}}
-                        ]
-                    }],
-                    "response_format": {"type": "json_object"}
-                }
-                req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {openai_key}'})
-                with urllib.request.urlopen(req, timeout=20) as resp:
-                    res = json.loads(resp.read().decode('utf-8'))
-                    text = res['choices'][0]['message']['content']
-                    return post_process_extracted_data(json.loads(text), effective_type, raw_text="")
-            except urllib.error.HTTPError as http_err:
-                err_msg = http_err.read().decode('utf-8')
-                logger.error(f"OpenAI API Error: {http_err.code} - {err_msg}")
-                return {"error": f"❌ OpenAI API Rejected Key (HTTP {http_err.code}): Kunci API OpenAI ditolak oleh OpenAI Server."}, effective_type
-
-        # 2. Anthropic Claude 3.5 Sonnet API
-        if provider in ["claude", "anthropic"]:
-            if not anthropic_key or "isi_dengan" in anthropic_key:
-                return {"error": "❌ Kunci ANTHROPIC_API_KEY belum valid. Silakan masukkan Anthropic API Key resmi."}, effective_type
-
-            logger.info("Calling Anthropic Claude 3.5 Sonnet Vision API...")
-            try:
-                url = "https://api.anthropic.com/v1/messages"
-                payload = {
-                    "model": "claude-3-5-sonnet-20241022",
-                    "max_tokens": 1024,
-                    "messages": [{
-                        "role": "user",
-                        "content": [
-                            {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64_img}},
-                            {"type": "text", "text": f"Extract structured JSON for '{effective_type}'. Output valid JSON only."}
-                        ]
-                    }]
-                }
-                req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json', 'x-api-key': anthropic_key, 'anthropic-version': '2023-06-01'})
-                with urllib.request.urlopen(req, timeout=20) as resp:
-                    res = json.loads(resp.read().decode('utf-8'))
-                    text = res['content'][0]['text']
-                    clean_json = re.sub(r'^```json\s*|\s*```$', '', text.strip())
-                    return post_process_extracted_data(json.loads(clean_json), effective_type, raw_text="")
-            except urllib.error.HTTPError as http_err:
-                err_msg = http_err.read().decode('utf-8')
-                logger.error(f"Claude API Error: {http_err.code} - {err_msg}")
-                return {"error": f"❌ Anthropic Claude API Rejected Key (HTTP {http_err.code}): Kunci API Claude ditolak oleh Anthropic Server."}, effective_type
-
-        # 3. Google Gemini Vision API (with Auto-Retry & Model Fallback on HTTP 503 / 429)
-        if provider in ["gemini", "google", "cloud_vision", "auto"]:
-            if not gemini_key or "isi_dengan" in gemini_key:
-                return {"error": "❌ Kunci GEMINI_API_KEY belum diisi dengan API Key Google Gemini resmi."}, effective_type
-
-            logger.info("Calling Direct Google Gemini Vision API...")
             encoded_g_key = urllib.parse.quote(gemini_key)
-            models_to_try = ["gemini-flash-latest", "gemini-2.0-flash"]
+            models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-flash-latest"]
             
             prompt_text = f"""Extract structured JSON for document category: '{effective_type}'.
 Return ONLY valid JSON with fields: vendor_name, customer_name, invoice_number, po_number, invoice_date, order_date, due_date, delivery_date, subtotal, tax, tax_amount, total_amount, currency, items (array of {{no, sku, description, qty, unit, unit_price, total}}).
 CRITICAL EXTRACTION RULES:
-1. Currency: Detect the EXACT currency printed on the document (e.g., SGD, USD, EUR, IDR, INR). If SGD or S$ is present, set currency to "SGD". If USD or $ is present, set currency to "USD". Output "IDR" ONLY if Rp or IDR is printed.
-2. PO Number: Extract PO number from "No. PO", "PO #", "PO-...", "Purchase Order".
-3. Dates: Extract specific dates if printed separately (invoice_date, order_date, due_date, delivery_date). If only a single generic "Tanggal" or "Date" is printed, assign it to invoice_date and order_date.
-4. Part No / SKU: Extract "Part No", "Part Number", "Kode Barang", "SKU" into the "sku" field for each item (e.g. AN-BRG-895).
-5. Tax: Extract ANY tax rate printed on document (e.g., 12%, 11%, 10%, 9%, 8%, 7%, 5%, 0%, PPN, GST, VAT) into "tax" and the tax amount into "tax_amount".
-6. Item Description: Keep ONLY the primary product/item title line. Exclude secondary sub-text, specs, comments, notes, or multi-line remarks."""
-            
+1. Currency: Detect the EXACT currency printed on document.
+2. Return strictly valid JSON object."""
+
             payload = {
                 "contents": [{
                     "parts": [
@@ -575,9 +507,71 @@ CRITICAL EXTRACTION RULES:
             if "503" in last_error_msg:
                 return {"error": "⚠️ Server Google AI sedang mengalami beban tinggi / sibuk sementara (HTTP 503). Silakan coba lagi beberapa saat lagi."}, effective_type
             elif "429" in last_error_msg:
-                return {"error": "⚠️ Batas kecepatan request tercapai (HTTP 429 Rate Limit). Silakan tunggu sebentar sebelum mencoba lagi."}, effective_type
+                return {"error": "⚠️ Batas kecepatan request tercapai (HTTP 429 Rate Limit) atau API Key Gemini tidak valid/kehabisan kuota."}, effective_type
+            elif "400" in last_error_msg or "403" in last_error_msg:
+                return {"error": f"❌ Google Gemini API Key Ditolak ({last_error_msg}): Kunci API Gemini tidak valid atau tidak memiliki akses."}, effective_type
             else:
-                return {"error": f"❌ Google Gemini API Error ({last_error_msg}): Kunci API Gemini ditolak atau server mengalami gangguan."}, effective_type
+                return {"error": f"❌ Google Gemini API Error ({last_error_msg}): Server mengalami gangguan atau API key ditolak."}, effective_type
+
+        # 2. OpenAI GPT-4o API
+        elif provider in ["openai", "gpt", "gpt-4o"]:
+            if not openai_key or "isi_dengan" in openai_key:
+                return {"error": "❌ Kunci OPENAI_API_KEY belum valid. Silakan masukkan OpenAI API Key resmi."}, effective_type
+            
+            logger.info("Calling OpenAI GPT-4o Vision API...")
+            try:
+                url = "https://api.openai.com/v1/chat/completions"
+                prompt_text = f"Extract structured JSON for document type: '{effective_type}'. Return ONLY valid JSON."
+                payload = {
+                    "model": "gpt-4o",
+                    "messages": [{
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt_text},
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_img}"}}
+                        ]
+                    }],
+                    "response_format": {"type": "json_object"}
+                }
+                req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {openai_key}'})
+                with urllib.request.urlopen(req, timeout=20) as resp:
+                    res = json.loads(resp.read().decode('utf-8'))
+                    text = res['choices'][0]['message']['content']
+                    return post_process_extracted_data(json.loads(text), effective_type, raw_text="")
+            except urllib.error.HTTPError as http_err:
+                err_msg = http_err.read().decode('utf-8')
+                logger.error(f"OpenAI API Error: {http_err.code} - {err_msg}")
+                return {"error": f"❌ OpenAI API Rejected Key (HTTP {http_err.code}): Kunci API OpenAI ditolak oleh OpenAI Server."}, effective_type
+
+        # 3. Anthropic Claude 3.5 Sonnet API
+        elif provider in ["claude", "anthropic"]:
+            if not anthropic_key or "isi_dengan" in anthropic_key:
+                return {"error": "❌ Kunci ANTHROPIC_API_KEY belum valid. Silakan masukkan Anthropic API Key resmi."}, effective_type
+
+            logger.info("Calling Anthropic Claude 3.5 Sonnet Vision API...")
+            try:
+                url = "https://api.anthropic.com/v1/messages"
+                payload = {
+                    "model": "claude-3-5-sonnet-20241022",
+                    "max_tokens": 1024,
+                    "messages": [{
+                        "role": "user",
+                        "content": [
+                            {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64_img}},
+                            {"type": "text", "text": f"Extract structured JSON for '{effective_type}'. Output valid JSON only."}
+                        ]
+                    }]
+                }
+                req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json', 'x-api-key': anthropic_key, 'anthropic-version': '2023-06-01'})
+                with urllib.request.urlopen(req, timeout=20) as resp:
+                    res = json.loads(resp.read().decode('utf-8'))
+                    text = res['content'][0]['text']
+                    clean_json = re.sub(r'^```json\s*|\s*```$', '', text.strip())
+                    return post_process_extracted_data(json.loads(clean_json), effective_type, raw_text="")
+            except urllib.error.HTTPError as http_err:
+                err_msg = http_err.read().decode('utf-8')
+                logger.error(f"Claude API Error: {http_err.code} - {err_msg}")
+                return {"error": f"❌ Anthropic Claude API Rejected Key (HTTP {http_err.code}): Kunci API Claude ditolak oleh Anthropic Server."}, effective_type
 
         # 4. Enhanced High-Res Image Preprocessing Fallback (OpenCV CLAHE)
         from . import ocr_engine
