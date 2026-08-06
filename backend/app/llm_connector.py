@@ -145,13 +145,15 @@ def sanitize_category_fields(data: dict, effective_type: str) -> dict:
             "expiry_date": str(data.get("expiry_date") or data.get("berlaku_hingga", "SEUMUR HIDUP")).strip()
         }
     elif cat == "passport":
+        from app.parsers.passport_parser import format_passport_name
         pass_num = str(data.get("passport_number") or data.get("id_number") or "N/A").strip()
+        raw_pname = str(data.get("full_name") or data.get("nama") or "N/A").strip()
         return {
             "document_type": "Passport",
             "passport_type": str(data.get("passport_type") or "P").strip(),
             "country_code": str(data.get("country_code") or "IDN").strip(),
             "passport_number": pass_num,
-            "full_name": str(data.get("full_name") or data.get("nama") or "N/A").strip(),
+            "full_name": format_passport_name(raw_pname),
             "place_of_birth": str(data.get("place_of_birth") or data.get("tempat_lahir", "N/A")).strip(),
             "date_of_birth": str(data.get("date_of_birth") or data.get("tanggal_lahir", "N/A")).strip(),
             "gender": str(data.get("gender") or data.get("sex", "N/A")).strip(),

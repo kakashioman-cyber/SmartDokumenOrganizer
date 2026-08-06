@@ -18,7 +18,7 @@ PASSPORT_REGEX = re.compile(r'\b[A-Z]{1,2}\d{7,8}\b')
 
 # Date of birth / Document Date regexes
 DOB_REGEX = re.compile(
-    r'\b(?:\d{1,2}[-./]\d{1,2}[-./](?:19|20)\d{2}|\d{1,2}\s+(?:Jan|Feb|Mar|Apr|Mei|Jun|Jul|Agu|Sep|Okt|Nov|Des|Januari|Februari|Maret|April|Juni|Juli|Agustus|September|Oktober|November|Desember|January|February|March|April|May|June|July|August|September|October|November|December)[a-z]*\s+(?:19|20)?\d{2}|\d{1,2}/\d{1,2}/\d{2,4})\b',
+    r'\b(?:\d{1,2}[-./]\d{1,2}[-./](?:19|20)\d{2}|\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|Mei|Agu|Okt|Des|Januari|Februari|Maret|April|Juni|Juli|Agustus|September|Oktober|November|Desember|January|February|March|April|May|June|July|August|September|October|November|December)[a-z]*\s+(?:19|20)?\d{2}|\d{1,2}/\d{1,2}/\d{2,4})\b',
     re.IGNORECASE
 )
 

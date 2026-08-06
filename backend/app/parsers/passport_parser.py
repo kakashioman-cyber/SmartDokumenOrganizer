@@ -1,10 +1,25 @@
 import re
 from .base_parser import BaseDocumentParser
 
+def format_passport_name(name: str) -> str:
+    if not name or name == 'N/A':
+        return name
+    clean_s = name.strip()
+    if '<' in clean_s:
+        parts = [p.replace('<', ' ').strip() for p in clean_s.split('<<') if p.strip('< ')]
+        if len(parts) >= 2:
+            return f"{parts[1]} {parts[0]}"
+        elif len(parts) == 1:
+            return parts[0]
+    return clean_s
+
 class PassportParser(BaseDocumentParser):
     """Dedicated Modular Parser for International & Indonesian Passports."""
 
-    def parse(self, prompt: str, lines: list) -> dict:
+    def parse(self, prompt: str, lines: list = None) -> dict:
+        if lines is None:
+            lines = [l.strip() for l in prompt.split('\n') if l.strip()]
+
         passport_data = {
             "document_type": "Passport",
             "passport_type": "P",
@@ -33,12 +48,12 @@ class PassportParser(BaseDocumentParser):
                 passport_data["passport_number"] = p_fallback.group(1).upper()
 
         # Full Name
-        fn_label_match = re.search(r'(?:NAMA LENGKAP|FULL NAME)\s*[:.\s/-]*\n?\s*(\[NAME_\d+\]|[^\n]+)', prompt, re.IGNORECASE)
+        fn_label_match = re.search(r'(?:NAMA LENGKAP|FULL NAME|FULLNAME|NAMALENGKAP)\s*[:.\s/-]*\n?\s*(\[NAME_\d+\]|[^\n]+)', prompt, re.IGNORECASE)
         if fn_label_match:
             cand = fn_label_match.group(1).strip()
-            cand = re.sub(r'^(?:IDN|PASSPORT|P<IDN|FULL NAME|NAMA LENGKAP)[:.\s/-]*', '', cand, flags=re.IGNORECASE).strip()
+            cand = re.sub(r'^(?:IDN|PASSPORT|P<IDN|FULL NAME|FULLNAME|NAMA LENGKAP|NAMALENGKAP)[:.\s/-]*', '', cand, flags=re.IGNORECASE).strip()
             if cand and len(cand) >= 2 and cand.upper() not in ["IDN", "INDONESIA"]:
-                passport_data["full_name"] = cand
+                passport_data["full_name"] = format_passport_name(cand)
 
         # 2. Secondary Scan: Process MRZ Lines at bottom of passport
         mrz_lines = []
