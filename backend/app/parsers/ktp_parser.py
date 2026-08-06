@@ -182,14 +182,14 @@ class KTPParser(BaseDocumentParser):
 
         # 8. Kel/Desa (Supports values above or below 'Kel/Desa' label)
         for idx, l in enumerate(prompt_lines):
-            if any(kw in l.upper() for kw in ['KEL/DESA', 'K-L/DESA', 'KELURAHAN', 'DESA']):
-                line_val = re.sub(r'^(?:K[-e]l/Desa|Kel/Desa|Kelurah[a-z]+|Desa)[:.;,\s-]*', '', l, flags=re.IGNORECASE).strip()
-                if line_val and not any(kw in line_val.upper() for kw in ['KECAMATAN', 'AGAMA', 'STATUS', 'PEKERJAAN']):
+            if re.search(r'\b(?:KELURAHAN|DESA)\b|K[^\s/]*\/DESA', l, re.IGNORECASE):
+                line_val = re.sub(r'^(?:K[^\s/]*\/Desa|Kel/Desa|Kelurah[a-z]+|Desa)[:.;,\s-]*', '', l, flags=re.IGNORECASE).strip()
+                if line_val and not any(kw in line_val.upper() for kw in ['KECAMATAN', 'AGAMA', 'STATUS', 'PEKERJAAN', 'JENIS', 'KELAMIN']):
                     ktp_data["kel_desa"] = line_val
                     break
                 elif idx > 0 and prompt_lines[idx-1].strip().isalpha():
                     prev_val = prompt_lines[idx-1].strip()
-                    if not any(kw in prev_val.upper() for kw in ['RT', 'RW', 'ALAMAT', 'KECAMATAN', 'AGAMA']):
+                    if not any(kw in prev_val.upper() for kw in ['RT', 'RW', 'ALAMAT', 'KECAMATAN', 'AGAMA', 'JENIS', 'KELAMIN']):
                         ktp_data["kel_desa"] = prev_val
                         break
 
