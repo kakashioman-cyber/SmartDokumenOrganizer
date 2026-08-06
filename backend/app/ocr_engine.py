@@ -56,16 +56,16 @@ def deskew_document_image(np_img):
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (40, 1))
         text_lines_mask = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
 
-        lines_p = cv2.HoughLinesP(text_lines_mask, 1, np.pi / 180, threshold=80, minLineLength=80, maxLineGap=10)
+        lines_p = cv2.HoughLinesP(text_lines_mask, 1, np.pi / 180, threshold=100, minLineLength=100, maxLineGap=10)
         angles = []
         if lines_p is not None:
             for line in lines_p:
                 x1, y1, x2, y2 = line[0]
                 angle = np.degrees(np.arctan2(y2 - y1, x2 - x1))
-                if -45.0 <= angle <= 45.0:
+                if -8.0 <= angle <= 8.0:
                     angles.append(angle)
 
-        if not angles or abs(float(np.median(angles))) < 0.5 or abs(float(np.median(angles))) > 45.0:
+        if not angles or abs(float(np.median(angles))) < 0.8 or abs(float(np.median(angles))) > 8.0:
             return np_img
 
         angle = float(np.median(angles))
