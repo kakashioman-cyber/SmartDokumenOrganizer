@@ -64,8 +64,8 @@ export default function ExtractionResult({ data, fileObj, onSaveSuccess }) {
           <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-400">
             <span>Dokumen: <strong className="text-emerald-300">{data.file_name}</strong></span>
             <span>| Kategori: <strong className="text-slate-200 uppercase">{data.doc_type}</strong></span>
-            <span>| Modus: <strong className={data.llm_engine === 'ollama' || isConfidential ? 'text-emerald-400' : 'text-amber-400'}>
-              {data.llm_engine === 'ollama' || isConfidential ? '🔒 Mode A (Offline Rahasia)' : '🌐 Mode B (Cloud Vision)'}
+            <span>| Modus: <strong className={isConfidential ? 'text-emerald-400' : 'text-amber-400'}>
+              {isConfidential ? '🔒 Mode A (Offline Rahasia)' : '🌐 Mode B (Cloud Vision)'}
             </strong></span>
             {data.process_time_seconds !== undefined && (
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-950/80 text-sky-300 border border-sky-600/40 shadow-[0_0_10px_rgba(56,189,248,0.2)]">

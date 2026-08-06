@@ -441,142 +441,21 @@ def analyze_document_image(image_bytes: bytes, doc_type: str = "auto", provider:
             anthropic_key = clean_api_key(os.getenv("ANTHROPIC_API_KEY", ""))
             logger.info("🔑 Using Default API Keys from .env environment file.")
 
-        # 0. Ollama Local AI Vision API (100% Local, Offline, Zero Cloud Cost, Zero Data Leak)
-        if provider in ["ollama", "moondream", "qwen2-vl", "llava", "local_vision"]:
-            logger.info("Calling Ollama Local AI Vision API (http://localhost:11434)...")
-            
-            # Auto-healing: Ensure Ollama serve is running locally without Vulkan GPU crashes
-            try:
-                urllib.request.urlopen("http://localhost:11434/api/tags", timeout=1)
-            except Exception:
-                logger.info("🚀 Auto-starting Ollama Local AI Vision server on demand...")
-                ollama_env = os.environ.copy()
-                if "OLLAMA_MODELS" not in ollama_env:
-                    ollama_env["OLLAMA_MODELS"] = r"D:\My Data\Project\OllamaModels"
-                ollama_env["OLLAMA_VULKAN"] = "false"
-                ollama_bin = os.path.expanduser('~') + r"\AppData\Local\Programs\Ollama\ollama.exe"
-                alt_bin = r"D:\My Data\Project\Ollama\ollama.exe"
-                target_bin = ollama_bin if os.path.exists(ollama_bin) else (alt_bin if os.path.exists(alt_bin) else None)
-                if target_bin:
-                    import subprocess
-                    subprocess.Popen([target_bin, "serve"], env=ollama_env)
-                    import time
-                    time.sleep(2.5)
+        # 1. Google Gemini Vision API (Primary Cloud AI Vision Engine)
+        if provider in ["gemini", "google", "cloud_vision", "auto", "ollama", "local_vision", "deepseek"]:
+            if not gemini_key or "isi_dengan" in gemini_key:
+                # If Gemini key isn't provided, fall back to Local Rule Preprocessing Engine
+                from . import ocr_engine
+                logger.info("No Gemini API key provided. Falling back to Local Rule Preprocessing Engine...")
+                ocr_res = ocr_engine.process_document(image_bytes, "direct_vision_doc.jpg")
+                raw_text = ocr_res.get("text", "")
+                if effective_type in ["auto", "", "none"]:
+                    effective_type = detect_document_type(raw_text)
+                parser = parsers.get_parser(effective_type)
+                res_data = parser.parse(raw_text)
+                return res_data, effective_type
 
-            DYNAMIC_DOC_SCHEMAS = {
-                "ktp": "fields: nik, nama, tempat_lahir, tanggal_lahir, jenis_kelamin, gol_darah, alamat, rt_rw, kel_desa, kecamatan, agama, status_perkawinan, pekerjaan, kewarganegaraan, berlaku_hingga",
-                "passport": "fields: passport_number, full_name, nationality, date_of_birth, place_of_birth, sex, date_of_issue, date_of_expiry, issuing_authority, mrz_line1, mrz_line2",
-                "invoice": "fields: document_type (invoice), vendor_name, customer_name, invoice_number (extract from 'No. Invoice', 'Invoice No', 'INV/', 'No. Inv', 'Faktur No'), invoice_date, due_date, subtotal, tax, total_amount, currency, items (no, sku, description, qty, unit, unit_price, total)",
-                "vendor_doc": "fields: document_type (vendor), vendor_name, customer_name, po_number (extract from 'PO No', 'No. PO', 'PO-'), invoice_number (extract from 'No. Invoice', 'Invoice No', 'INV/', 'No. Inv', 'Faktur No'), order_date, delivery_date, total_amount, currency, items (no, sku, description, qty, unit, unit_price, total)",
-                "vendor": "fields: document_type (vendor), vendor_name, customer_name, po_number (extract from 'PO No', 'No. PO', 'PO-'), invoice_number (extract from 'No. Invoice', 'Invoice No', 'INV/', 'No. Inv', 'Faktur No'), order_date, delivery_date, total_amount, currency, items (no, sku, description, qty, unit, unit_price, total)"
-            }
-            default_schema = "fields: vendor_name, customer_name, po_number (e.g. PO-7539), invoice_number (e.g. INV/AN-2026/62060 from 'No. Invoice', 'Invoice No', 'INV/'), order_date, delivery_date, invoice_date, subtotal, tax, tax_amount, total_amount, currency, items (array of {{no, sku, description, qty, unit, unit_price, total}} in TOP-TO-BOTTOM order)"
-            schema_str = DYNAMIC_DOC_SCHEMAS.get(effective_type.lower().strip(), default_schema)
-            prompt_text = f"Extract structured JSON for document '{effective_type}' with schema {schema_str}. IMPORTANT: Look closely for 'No. Invoice' or 'Invoice No' or 'INV/' to fill 'invoice_number'. Look for 'PO No' or 'No. PO' to fill 'po_number'. Output valid JSON only."
-
-            # Smart query installed models from Ollama to avoid attempting uninstalled models or duplicate model calls
-            installed_models = []
-            try:
-                with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2) as tags_resp:
-                    tags_data = json.loads(tags_resp.read().decode('utf-8'))
-                    installed_models = [m.get("name", "") for m in tags_data.get("models", [])]
-            except Exception:
-                pass
-
-            candidates = ["qwen2.5vl:latest", "qwen2-vl:latest", "moondream:latest", "llama3.2-vision", "deepseek-r1:latest"]
-            local_models = []
-            for c in candidates:
-                for inst in installed_models:
-                    if inst == c or inst.split(':')[0] == c.split(':')[0]:
-                        if inst not in local_models:
-                            local_models.append(inst)
-            if not local_models:
-                local_models = installed_models if installed_models else ["qwen2.5vl:latest"]
-
-            for model_name in local_models:
-                try:
-                    url = "http://localhost:11434/api/generate"
-                    is_text_only = any(m in model_name for m in ["deepseek-r1", "deepseek-v3", "llama3", "phi3"])
-                    
-                    if is_text_only:
-                        # Extract OCR text via PaddleOCR first for text-only reasoning models like deepseek-r1
-                        from . import ocr_engine
-                        ocr_res = ocr_engine.run_ocr_on_image(image_bytes)
-                        ocr_text = ocr_res.get('text', '') if isinstance(ocr_res, dict) else str(ocr_res)
-                        full_prompt = f"Extract structured JSON for document '{effective_type}' with schema {schema_str} from OCR text:\n\n{ocr_text}\n\nOutput JSON only."
-                        payload = {
-                            "model": model_name,
-                            "prompt": full_prompt,
-                            "stream": False,
-                            "format": "json",
-                            "keep_alive": "5m",
-                            "options": {"num_predict": 800, "temperature": 0.1}
-                        }
-                    else:
-                        payload = {
-                            "model": model_name,
-                            "prompt": prompt_text,
-                            "images": [base64_img],
-                            "stream": False,
-                            "format": "json",
-                            "keep_alive": "5m",
-                            "options": {"num_predict": 800, "temperature": 0.1}
-                        }
-
-                    req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json'})
-                    with urllib.request.urlopen(req, timeout=300) as resp:
-                        res = json.loads(resp.read().decode('utf-8'))
-                        text = res.get('response', '')
-                        clean_json = re.sub(r'^```json\s*|\s*```$', '', text.strip())
-                        try:
-                            parsed_data = json.loads(clean_json)
-                        except Exception:
-                            # Auto-repair truncated JSON string
-                            open_braces = clean_json.count('{') - clean_json.count('}')
-                            open_brackets = clean_json.count('[') - clean_json.count(']')
-                            repaired = clean_json + (']' * max(0, open_brackets)) + ('}' * max(0, open_braces))
-                            try:
-                                parsed_data = json.loads(repaired)
-                            except Exception:
-                                parsed_data = {"vendor_name": "Extracted Doc", "raw_output": clean_json}
-
-                        if isinstance(parsed_data, dict):
-                            parsed_data, effective_type = post_process_extracted_data(parsed_data, effective_type, raw_text=raw_text)
-                            return parsed_data, effective_type
-                except Exception as e:
-                    logger.warning(f"Ollama local model '{model_name}' not available or timed out: {e}")
-            return {"error": "⏳ Model AI Vision Lokal sedang diunduh / disiapkan di latar belakang. Silakan pastikan Ollama berjalan atau pilih provider AI Cloud!"}, effective_type
-
-        # 0. DeepSeek API (Cloud DeepSeek-V3 / DeepSeek-R1)
-        if provider in ["deepseek", "deepseek_r1", "deepseek_v3"]:
-            deepseek_key = custom_api_key or os.environ.get("DEEPSEEK_API_KEY", "")
-            if not deepseek_key or "isi_dengan" in deepseek_key:
-                return {"error": "❌ Kunci DEEPSEEK_API_KEY belum valid. Silakan masukkan DeepSeek API Key resmi Anda."}, effective_type
-            
-            logger.info("Calling DeepSeek API...")
-            try:
-                url = "https://api.deepseek.com/v1/chat/completions"
-                prompt_text = f"Extract structured JSON for document '{effective_type}'. Return ONLY valid JSON matching standard document keys."
-                payload = {
-                    "model": "deepseek-chat",
-                    "messages": [
-                        {"role": "system", "content": "You are an expert OCR & Document Parsing AI. Extract structured JSON accurately."},
-                        {"role": "user", "content": prompt_text}
-                    ],
-                    "response_format": {"type": "json_object"}
-                }
-                req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {deepseek_key}'})
-                with urllib.request.urlopen(req, timeout=25) as resp:
-                    res = json.loads(resp.read().decode('utf-8'))
-                    text_resp = res['choices'][0]['message']['content']
-                    clean_json = re.sub(r'^```json\s*|\s*```$', '', text_resp.strip())
-                    return post_process_extracted_data(json.loads(clean_json), effective_type, raw_text="")
-            except Exception as e:
-                logger.error(f"DeepSeek API Error: {e}")
-                return {"error": f"❌ Gagal menghubungi DeepSeek API: {str(e)}"}, effective_type
-
-        # 1. OpenAI GPT-4o Vision API
-        if provider in ["openai", "gpt4o"]:
+            logger.info("Calling Direct Google Gemini Vision API...")
             if not openai_key or "isi_dengan" in openai_key:
                 return {"error": "❌ Kunci OPENAI_API_KEY belum valid. Silakan masukkan OpenAI API Key resmi."}, effective_type
             

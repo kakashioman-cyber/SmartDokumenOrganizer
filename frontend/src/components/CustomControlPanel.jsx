@@ -115,44 +115,26 @@ export default function CustomControlPanel({
               🧠 Pilihan Provider Vision AI Engine
             </label>
 
-            {/* Mode A: Local Offline Engines (Row 1 Side-by-Side) */}
+            {/* Mode A: Local Offline Engines */}
             <div className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-1 flex items-center gap-1">
-              <span>🔒 100% Local Offline Engines (Mode A)</span>
+              <span>🔒 100% Local Offline Engine (Mode A)</span>
             </div>
-            <div className="grid grid-cols-2 gap-2.5 mb-3">
+            <div className="grid grid-cols-1 gap-2.5 mb-3">
               <button
                 type="button"
                 onClick={() => {
                   setLlmEngine('local');
                   setIsConfidential(true);
                 }}
-                className={`flex items-center gap-2 p-2.5 rounded-xl border text-xs font-medium transition-all ${llmEngine === 'local'
+                className={`flex items-center gap-3 p-3 rounded-xl border text-xs font-medium transition-all ${llmEngine === 'local' || isConfidential
                   ? 'bg-emerald-950/60 border-emerald-400 text-emerald-300 shadow-[0_0_12px_rgba(52,211,153,0.2)]'
                   : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700'
                   }`}
               >
-                <Shield className="w-4 h-4 text-emerald-400 shrink-0" />
+                <Shield className="w-5 h-5 text-emerald-400 shrink-0" />
                 <div className="text-left">
-                  <div className="font-bold">Local Offline Parser</div>
-                  <div className="text-[9px] text-slate-400">Rule-based (Super Cepat)</div>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setLlmEngine('ollama');
-                  setIsConfidential(true);
-                }}
-                className={`flex items-center gap-2 p-2.5 rounded-xl border text-xs font-medium transition-all ${llmEngine === 'ollama' || llmEngine === 'moondream'
-                  ? 'bg-purple-950/60 border-purple-400 text-purple-300 shadow-[0_0_12px_rgba(192,132,252,0.2)]'
-                  : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700'
-                  }`}
-              >
-                <Cpu className="w-4 h-4 text-purple-400 shrink-0" />
-                <div className="text-left">
-                  <div className="font-bold">Ollama Qwen2-VL</div>
-                  <div className="text-[9px] text-purple-400 font-semibold">Local Vision AI (Detail & Slow)</div>
+                  <div className="font-bold text-sm">Local PaddleOCR + Smart Rule Parser</div>
+                  <div className="text-[10px] text-emerald-400 font-semibold">100% Offline, Privacy Terjamin, Super Cepat (&lt;1s)</div>
                 </div>
               </button>
             </div>
