@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import { Database, CheckCircle, Eye, FileText, Lock, Code, Sparkles, Save } from 'lucide-react';
 
+import { API_BASE_URL } from '@/config';
+
 export default function ExtractionResult({ data, fileObj, onSaveSuccess }) {
   const [activeInspectorTab, setActiveInspectorTab] = useState('final');
   const [isSaving, setIsSaving] = useState(false);
@@ -32,7 +34,7 @@ export default function ExtractionResult({ data, fileObj, onSaveSuccess }) {
       formData.append('llm_engine', data.llm_engine || 'Local Rule Parser');
       formData.append('process_time_seconds', data.process_time_seconds || 0);
 
-      const res = await fetch('http://localhost:8000/api/documents/save', {
+      const res = await fetch(`${API_BASE_URL}/api/documents/save`, {
         method: 'POST',
         body: formData
       });

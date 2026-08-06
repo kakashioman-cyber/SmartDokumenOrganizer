@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { Database, Search, Filter, Trash2, Download, RefreshCw, FileSpreadsheet, ChevronDown, ChevronUp, Eye, EyeOff, FileText, Code, CheckCircle2 } from 'lucide-react';
 
+import { API_BASE_URL } from '@/config';
+
 export default function ArchiveManager({ refreshTrigger }) {
   const [documents, setDocuments] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -14,7 +16,7 @@ export default function ArchiveManager({ refreshTrigger }) {
   const fetchDocuments = async () => {
     setIsLoading(true);
     try {
-      let url = 'http://localhost:8000/api/documents';
+      let url = `${API_BASE_URL}/api/documents`;
       const params = new URLSearchParams();
       if (searchQuery) params.append('search', searchQuery);
       if (selectedCategory && selectedCategory !== 'All') params.append('doc_type', selectedCategory);
@@ -38,7 +40,7 @@ export default function ArchiveManager({ refreshTrigger }) {
     if (e) e.stopPropagation();
     if (!confirm(`Hapus dokumen #${id}?`)) return;
     try {
-      const res = await fetch(`http://localhost:8000/api/documents/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE_URL}/api/documents/${id}`, { method: 'DELETE' });
       if (res.ok) {
         setStatusMessage(`Dokumen #${id} berhasil dihapus.`);
         if (expandedDocId === id) setExpandedDocId(null);
@@ -52,7 +54,7 @@ export default function ArchiveManager({ refreshTrigger }) {
   const handleClearAll = async () => {
     if (!confirm('⚠️ Apakah Anda yakin ingin menghapus SEMUA data dokumen tersimpan dan me-reset ID dari #1?')) return;
     try {
-      const res = await fetch('http://localhost:8000/api/documents/clear-all', { method: 'DELETE' });
+      const res = await fetch(`${API_BASE_URL}/api/documents/clear-all`, { method: 'DELETE' });
       if (res.ok) {
         setStatusMessage('🗑️ Semua data dokumen berhasil dibersihkan & ID di-reset ke #1.');
         setExpandedDocId(null);
@@ -64,7 +66,7 @@ export default function ArchiveManager({ refreshTrigger }) {
   };
 
   const handleDownloadExcel = () => {
-    const downloadUrl = `http://localhost:8000/api/export/excel?doc_type=${selectedCategory}`;
+    const downloadUrl = `${API_BASE_URL}/api/export/excel?doc_type=${selectedCategory}`;
     window.open(downloadUrl, '_blank');
   };
 

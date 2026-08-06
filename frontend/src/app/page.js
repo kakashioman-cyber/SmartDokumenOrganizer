@@ -6,6 +6,7 @@ import StepTracker from '@/components/StepTracker';
 import CustomControlPanel from '@/components/CustomControlPanel';
 import ExtractionResult from '@/components/ExtractionResult';
 import ArchiveManager from '@/components/ArchiveManager';
+import { API_BASE_URL } from '@/config';
 
 export default function Home() {
   const [activeMainTab, setActiveMainTab] = useState('scan'); // 'scan' | 'archive'
@@ -46,7 +47,7 @@ export default function Home() {
     formData.append('custom_api_key', apiKey);
 
     try {
-      const response = await fetch('http://localhost:8000/api/idp/process-stream', {
+      const response = await fetch(`${API_BASE_URL}/api/idp/process-stream`, {
         method: 'POST',
         body: formData,
       });
