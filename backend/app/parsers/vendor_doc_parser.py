@@ -191,9 +191,13 @@ class VendorDocumentParser(BaseDocumentParser):
         if sub_m:
             vendor_data["subtotal"] = sub_m.group(1).strip()
 
-        disc_m = re.search(r'\bDiscounts?\s*[:.-]?\s*([\d.,]+)', prompt, re.IGNORECASE)
+        disc_m = re.search(r'\bDiscounts?\s*(?:\([^)]*\))?\s*[:.-]?\s*([\d.,]+)', prompt, re.IGNORECASE)
         if disc_m:
             vendor_data["discount"] = disc_m.group(1).strip()
+
+        freight_m = re.search(r'\b(?:Freight|Shipping|Ongkir)\s*(?:\([^)]*\))?\s*[:.-]?\s*([\d.,]+)', prompt, re.IGNORECASE)
+        if freight_m:
+            vendor_data["freight"] = freight_m.group(1).strip()
 
         gtot_m = re.search(r'\b(?:Grand\s*Total|Total\s*Cost|Total\s*Amount|Jumlah\s*Total)\s*[:.-]?\s*([0-9.,]{1,12})', prompt, re.IGNORECASE)
         if gtot_m:

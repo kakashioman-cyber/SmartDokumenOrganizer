@@ -649,6 +649,17 @@ class InvoiceParser(BaseDocumentParser):
                             "total": format_currency(tot_val if tot_val != "0" else price_val, currency=invoice_data["currency"], include_symbol=False)
                         })
 
+        # Post-Processing SKU Sub-line Linker (Attaches standalone 'SKU: <val>' lines to items)
+        if invoice_data.get("items"):
+            for idx_l, l in enumerate(lines):
+                sku_match = re.search(r'^\s*SKU\s*[:\-]?\s*([A-Za-z0-9_-]{3,30})', l, re.IGNORECASE)
+                if sku_match:
+                    found_sku = sku_match.group(1).strip()
+                    for it in reversed(invoice_data["items"]):
+                        if it.get("sku") in ["-", "N/A", ""]:
+                            it["sku"] = found_sku
+                            break
+
         if invoice_data["items"]:
             invoice_data["quantity"] = str(len(invoice_data["items"]))
 

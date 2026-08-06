@@ -203,12 +203,22 @@ def verify_and_reconcile_invoice_math(invoice_data: dict) -> dict:
             rate_float = rate_num / 100.0
 
     if sub_flt > 0:
-        if tax_amt_flt > 0 and tot_ocr > 0 and abs((sub_flt + tax_amt_flt) - tot_ocr) < 10:
+        disc_flt = parse_float_digits(invoice_data.get("discount") or "0")
+        freight_flt = parse_float_digits(invoice_data.get("freight") or "0")
+        calc_tot_with_df = sub_flt - disc_flt + freight_flt + tax_amt_flt
+
+        if tot_ocr > 0 and abs(calc_tot_with_df - tot_ocr) < 5:
+            calc_tax_amt = tax_amt_flt
+            calc_tot = tot_ocr
+        elif tax_amt_flt > 0 and tot_ocr > 0 and abs((sub_flt + tax_amt_flt) - tot_ocr) < 10:
             calc_tax_amt = tax_amt_flt
             calc_tot = tot_ocr
         else:
             calc_tax_amt = (sub_flt * rate_float) if rate_float > 0 else tax_amt_flt
-            calc_tot = sub_flt + calc_tax_amt if calc_tax_amt > 0 else (tot_ocr if tot_ocr > sub_flt else sub_flt)
+            if (disc_flt > 0 or freight_flt > 0) and calc_tot_with_df > 0:
+                calc_tot = calc_tot_with_df
+            else:
+                calc_tot = sub_flt + calc_tax_amt if calc_tax_amt > 0 else (tot_ocr if tot_ocr > sub_flt else sub_flt)
         invoice_data["subtotal"] = fmt_num(sub_flt)
         invoice_data["tax"] = rate_pct_str
         invoice_data["tax_amount"] = fmt_num(calc_tax_amt)
