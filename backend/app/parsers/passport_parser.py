@@ -1,5 +1,10 @@
 import re
+import unicodedata
 from .base_parser import BaseDocumentParser
+
+def remove_accents(text: str) -> str:
+    """Generic Unicode Accent & Diacritics Normalizer (0% Hardcoding)."""
+    return ''.join(c for c in unicodedata.normalize('NFKD', text) if not unicodedata.combining(c))
 
 def format_passport_name(name: str) -> str:
     if not name or name == 'N/A':
@@ -115,7 +120,7 @@ class PassportParser(BaseDocumentParser):
         date_pattern = r'(\[DOB_\d+\]|\[DATE_\d+\]|\b\d{1,2}\s+(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\s+\d{4}|\b\d{2}[-./]\d{2}[-./]\d{4})'
 
         for i, line in enumerate(lines):
-            line_clean = line.replace('É', 'E').replace('é', 'e')
+            line_clean = remove_accents(line)
             line_upper = line_clean.upper()
             next_line = lines[i+1] if i + 1 < len(lines) else ""
             next_next_line = lines[i+2] if i + 2 < len(lines) else ""
