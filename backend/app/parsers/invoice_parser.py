@@ -133,6 +133,14 @@ class InvoiceParser(BaseDocumentParser):
                 invoice_data["customer_name"] = cand_c
 
         if invoice_data["vendor_name"] == "N/A":
+            m_nama = re.search(r'\b(?:Nama|Name|Vendor|Toko|Merchant|Store)\s*[:\-]\s*([A-Za-z0-9\s&.,\'\-]{3,40})', prompt, re.IGNORECASE)
+            if m_nama:
+                cand_v = m_nama.group(1).strip()
+                cand_v = re.split(r'\b(?:PAJAK|TAX|SUBTOTAL|TOTAL|NO\s*REK|TELP|BANK)\b', cand_v, flags=re.IGNORECASE)[0].strip(' :.-')
+                if len(cand_v) >= 3 and cand_v.upper() not in ["KEPADA", "TANGGAL", "PEMBAYARAN", "INVOICE"]:
+                    invoice_data["vendor_name"] = cand_v
+
+        if invoice_data["vendor_name"] == "N/A":
             for line in lines[:8]:
                 clean_l = line.strip()
                 if clean_l.startswith("---") or "PAGE" in clean_l.upper():
@@ -140,6 +148,8 @@ class InvoiceParser(BaseDocumentParser):
                 if clean_l.startswith("[ORG_"):
                     invoice_data["vendor_name"] = clean_l
                     break
+                clean_l = re.sub(r'\b(?:INVOICE|FAKTUR|NOTA|RECEIPT|BILL|STRUK)\b', '', clean_l, flags=re.IGNORECASE).strip(' :-.')
+                clean_l = re.sub(r'^[^\w]+', '', clean_l).strip()
                 l_upper = clean_l.upper()
                 if any(kw in l_upper for kw in ["INVOICE #", "NO INVOICE", "NOTA #", "STRUK #"]):
                     v = re.sub(r'^(INVOICE|NOTA|STRUK)\s*', '', clean_l, flags=re.IGNORECASE).strip()
@@ -147,7 +157,7 @@ class InvoiceParser(BaseDocumentParser):
                     if len(v) > 2 and v.upper() not in ["FOR", "DETAILS"]:
                         invoice_data["vendor_name"] = v
                         break
-                elif not any(kw in l_upper for kw in ["SUBMITTED", "KEPADA", "BILL TO", "INVOICE FOR", "TANGGAL", "DATE", "PHONE", "TELP", "JALAN", "JL", "RUKO", "NO PART", "PART NO", "DESKRIPSI", "SATUAN", "HARGA", "JUMLAH", "QTY", "PRODUCT", "DESCRIPTION", "PRICE", "TOTAL", "AMOUNT"]) and len(clean_l) > 3:
+                elif not any(kw in l_upper for kw in ["SUBMITTED", "KEPADA", "BILL TO", "INVOICE FOR", "TANGGAL", "DATE", "PHONE", "TELP", "JALAN", "JL", "RUKO", "NO PART", "PART NO", "DESKRIPSI", "SATUAN", "HARGA", "JUMLAH", "QTY", "PRODUCT", "DESCRIPTION", "PRICE", "TOTAL", "AMOUNT", "FASHION TERLENGKAP"]) and len(clean_l) > 3:
                     v = re.split(r'\b(INVOICE|INV|NUMBER|NOTA|STRUK|DATE|TELP|EMAIL|JALAN|JL|JL\.|JAKARTA|RUKO|GEDUNG)\b', clean_l, flags=re.IGNORECASE)[0].strip()
                     v = re.sub(r'^[|:\s\-+]+|[|:\s\-+]+$', '', v).strip()
                     if len(v) > 2 and not any(kw in v.upper() for kw in ["FOR", "DETAILS", "PURCHASE ORDER", "PURCHASEORDER", "PURCHASE", "ORDER", "SURAT JALAN", "FAKTUR", "INVOICE", "DESKRIPSI", "SATUAN", "HARGA", "JUMLAH"]):
