@@ -36,7 +36,8 @@ PRICE_REGEX = re.compile(
 )
 
 NAME_CONTEXT_REGEX = re.compile(
-    r'\b(?:FULLNAME|FULL NAME|NAMALENGKAP|NAMA LENGKAP|Name|Nama|Attn|Attention|Recipient|Penerima|Sender|Pengirim|Dear|Sincerely|Yth|Kepada|Invoice\s+for|Bill\s+to|Billed\s+to)\b[ \t:]*(?:FULLNAME|FULL NAME|NAMALENGKAP|NAMA LENGKAP|NAME|NAMA)*[ \t:]*\n?\s*([A-Za-z.]+(?:[ \t]+[A-Za-z.]+){0,4})',
+    r'\b(?:FULLNAME|FULL NAME|NAMALENGKAP|NAMA LENGKAP|Name|Nama|Attn|Attention|Recipient|Penerima|Sender|Pengirim|Dear|Sincerely|Yth|Kepada|Invoice\s+for|Bill\s+to|Billed\s+to)\b[ \t:]*(?:FULLNAME|FULL NAME|NAMALENGKAP|NAMA LENGKAP|NAME|NAMA)*[ \t:]*\n?\s*([A-Za-z.]+(?:[ \t]+[A-Za-z.]+){0,4})|'
+    r'\b(?:KEWARGANEGARAAN|NATIONALITY)\b[ \t:/]*(?:KEWARGANEGARAAN|NATIONALITY)*[ \t:/]*(?!INDONESIA\b)([A-Za-z.]+(?:[ \t]+[A-Za-z.]+){1,3})',
     re.IGNORECASE
 )
 
@@ -193,14 +194,18 @@ class PIIMasker:
 
         if 'NAME' in self.enabled_types:
             for m in NAME_CONTEXT_REGEX.finditer(text):
-                name_val = m.group(1).strip()
+                g_idx = 1 if m.group(1) else (2 if len(m.groups()) >= 2 and m.group(2) else 0)
+                if not g_idx:
+                    continue
+                name_val = m.group(g_idx).strip()
+                name_val = re.sub(r'^(?:KEWARGANEGARAAN|NATIONALITY)[:.\s/-]*', '', name_val, flags=re.IGNORECASE).strip()
                 if any(kw in name_val.upper() for kw in ["PAYABLE", "INVOICE", "ORDER", "SUBTOTAL", "TOTAL", "AMOUNT", "TEMPAT", "TEMPAL", "LAHIR", "TGL", "PROVINSI", "KOTA", "KABUPATEN", "AGAMA", "PEKERJAAN", "STATUS", "BERLAKU", "NIK", "GOL", "JENIS", "KELAMIN", "ALAMAT"]):
                     continue
                 # Skip city names or city-date lines from being masked
                 if re.search(r'[,.:\s]+\d{1,2}[\s.\-/]+\d{1,2}[\s.\-/]+\d{2,4}', text[m.start():m.end()+20]) or re.search(r'\b(?:SURABAYA|JAKARTA|BANDUNG|MEDAN|SEMARANG|BALI|MALANG|MAKASSAR|YOGYAKARTA|SOLO|DENPASAR|PALEMBANG|BATAM|PEKANBARU|BOGOR|BEKASI|TANGERANG|DEPOK)\b', name_val.upper()):
                     continue
                 full_match = m.group()
-                start_offset = full_match.index(name_val)
+                start_offset = full_match.index(name_val) if name_val in full_match else full_match.index(m.group(g_idx))
                 # Dynamically strip any 3-letter ISO country code prefix (e.g. IDN, USA, SGP, MYS, DEU, etc.)
                 iso_match = re.match(r'^([A-Z]{3})\s+', name_val, re.IGNORECASE)
                 if iso_match:

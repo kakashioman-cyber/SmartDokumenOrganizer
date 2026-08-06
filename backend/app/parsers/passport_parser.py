@@ -60,6 +60,14 @@ class PassportParser(BaseDocumentParser):
             if cand and len(cand) >= 2 and cand.upper() not in ["IDN", "INDONESIA"]:
                 passport_data["full_name"] = format_passport_name(cand)
 
+        if passport_data["full_name"] == "N/A":
+            fn_nat_match = re.search(r'\b(?:KEWARGANEGARAAN|NATIONALITY)\b[ \t:/]*(?:KEWARGANEGARAAN|NATIONALITY)*[ \t:/]*(\[NAME_\d+\]|[A-Za-z.]+(?:[ \t]+[A-Za-z.]+){1,3})', prompt, re.IGNORECASE)
+            if fn_nat_match:
+                cand_nat = fn_nat_match.group(1).strip()
+                cand_nat = re.sub(r'^(?:KEWARGANEGARAAN|NATIONALITY)[:.\s/-]*', '', cand_nat, flags=re.IGNORECASE).strip()
+                if cand_nat and cand_nat.upper() != "INDONESIA" and len(cand_nat) >= 2:
+                    passport_data["full_name"] = format_passport_name(cand_nat)
+
         # 2. Secondary Scan: Process MRZ Lines at bottom of passport
         mrz_lines = []
         for line in lines:
@@ -128,9 +136,9 @@ class PassportParser(BaseDocumentParser):
             combined_upper = combined_window.upper()
 
             # Place of Birth
-            if any(kw in line_upper for kw in ["PLACE OF BIRTH", "TEMPAT LAHIR", "TEMPAT LAIR", "LACE OP", "LACE OF"]):
+            if any(kw in line_upper for kw in ["PLACE OF BIRTH", "PLACEOFBIRTH", "TEMPAT LAHIR", "TEMPATLAHIR", "TEMPAT LAIR", "TEMPATLAIR", "LACE OP", "LACE OF"]):
                 pob_cand = ""
-                pob_m = re.search(r'(?:PLACE\s*OF\s*BIRTH|TEMPAT\s*LAHIR|TEMPAT\s*LAIR|LACE\s*OP|LACE\s*OF)\s*[:.\s/-]*.*?\b([A-Za-z]{3,25})\b\s*$', line_clean, re.IGNORECASE)
+                pob_m = re.search(r'(?:PLACE\s*OF\s*BIRTH|PLACEOFBIRTH|TEMPAT\s*LAHIR|TEMPATLAHIR|TEMPAT\s*LAIR|TEMPATLAIR|LACE\s*OP|LACE\s*OF)(?:[ \t:/]*(?:PLACEOFBIRTH|TEMPATLAHIR|TEMPAT|LAHIR|PLACE|BIRTH|OF|LACE|OP))*\s*[:./\s-]*([A-Za-z]{3,25})', line_clean, re.IGNORECASE)
                 if pob_m and pob_m.group(1).upper() not in ["DATE", "OF", "BIRTH", "SEX", "NATIONALITY", "PLACE", "LACE", "INDONESIA"]:
                     pob_cand = pob_m.group(1)
                 elif ":" in line_clean and not line_clean.strip().endswith(":"):
