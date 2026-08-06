@@ -116,7 +116,7 @@ class VendorDocumentParser(BaseDocumentParser):
                 v_name = re.sub(r'[:.-]+$', '', cand).strip()
 
         if v_name == "N/A":
-            m_nama = re.search(r'\b(?:Nama|Name|Vendor|Toko|Merchant|Store)\s*[:\-]\s*([A-Za-z0-9\s&.,\'\-]{3,40})', prompt, re.IGNORECASE)
+            m_nama = re.search(r'\b(?:Nama|Name|Vendor|Toko|Merchant|Store)\s*[:\-]\s*(\[NAME_\d+\][^\n|]*|\[ORG_\d+\][^\n|]*|[A-Za-z0-9\s&.,\'\-\[\]_]{3,40})', prompt, re.IGNORECASE)
             if m_nama:
                 cand_v = m_nama.group(1).strip()
                 cand_v = re.split(r'\b(?:PAJAK|TAX|SUBTOTAL|TOTAL|NO\s*REK|TELP|BANK)\b', cand_v, flags=re.IGNORECASE)[0].strip(' :.-')
@@ -126,8 +126,8 @@ class VendorDocumentParser(BaseDocumentParser):
         if v_name == "N/A":
             for l in lines[:5]:
                 clean_l = re.sub(r'\b(?:INVOICE|FAKTUR|NOTA|RECEIPT|BILL|STRUK)\b', '', l, flags=re.IGNORECASE).strip(' :-.')
-                clean_l = re.sub(r'^[^\w]+', '', clean_l).strip()
-                if not re.search(r'(?:Supplier|Vendor|Address|Contact|Email|Phone|GSTIN|PO|Invoice|Date|Tanggal|Page|Halaman|Qty|Satuan|Harga|Jumlah|Part\s*No|Deskripsi|FASHION TERLENGKAP|KEPADA|---)', clean_l, re.IGNORECASE):
+                clean_l = re.sub(r'^[^\w\[]+', '', clean_l).strip()
+                if not re.search(r'(?:Supplier|Vendor|Address|Contact|Email|Phone|GSTIN|PO|Invoice|Date|Tanggal|Page|Halaman|Qty|Satuan|Harga|Jumlah|Part\s*No|Deskripsi|FASHION TERLENGKAP|KEPADA|EMAIL_|DOB_|---)', clean_l, re.IGNORECASE):
                     if len(clean_l) > 2 and not clean_l.isdigit():
                         v_name = clean_l
                         break
