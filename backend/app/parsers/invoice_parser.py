@@ -434,7 +434,11 @@ class InvoiceParser(BaseDocumentParser):
                     unit = u_m.group(1).upper() if u_m else "PCS"
                     
                     sku_m = re.search(r'\b([A-Za-z0-9]{2,6}-[A-Za-z0-9]{2,6}(?:-\d{2,5})?)\b', desc_line + " " + num_line)
-                    sku = sku_m.group(1) if sku_m else "-"
+                    sku = "-"
+                    if sku_m:
+                        cand_sku = sku_m.group(1)
+                        if re.search(r'\d', cand_sku):
+                            sku = cand_sku
                     
                     raw_nums = re.findall(r'[\d.,]{1,15}', num_line)
                     floats = []
