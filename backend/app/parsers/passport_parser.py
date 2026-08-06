@@ -115,23 +115,28 @@ class PassportParser(BaseDocumentParser):
         date_pattern = r'(\[DOB_\d+\]|\[DATE_\d+\]|\b\d{1,2}\s+(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\s+\d{4}|\b\d{2}[-./]\d{2}[-./]\d{4})'
 
         for i, line in enumerate(lines):
-            line_upper = line.upper()
+            line_clean = line.replace('É', 'E').replace('é', 'e')
+            line_upper = line_clean.upper()
             next_line = lines[i+1] if i + 1 < len(lines) else ""
             next_next_line = lines[i+2] if i + 2 < len(lines) else ""
-            combined_window = line + " " + next_line + " " + next_next_line
+            combined_window = line_clean + " " + next_line + " " + next_next_line
+            combined_upper = combined_window.upper()
 
             # Place of Birth
-            if any(kw in line_upper for kw in ["PLACE OF BIRTH", "TEMPAT LAHIR"]):
+            if any(kw in line_upper for kw in ["PLACE OF BIRTH", "TEMPAT LAHIR", "TEMPAT LAIR", "LACE OP", "LACE OF"]):
                 pob_cand = ""
-                if ":" in line and not line.strip().endswith(":"):
-                    pob_cand = line.split(":")[-1].strip()
-                elif "SURABAYA" in combined_window.upper():
+                pob_m = re.search(r'(?:PLACE\s*OF\s*BIRTH|TEMPAT\s*LAHIR|TEMPAT\s*LAIR|LACE\s*OP|LACE\s*OF)\s*[:.\s/-]*.*?\b([A-Za-z]{3,25})\b\s*$', line_clean, re.IGNORECASE)
+                if pob_m and pob_m.group(1).upper() not in ["DATE", "OF", "BIRTH", "SEX", "NATIONALITY", "PLACE", "LACE", "INDONESIA"]:
+                    pob_cand = pob_m.group(1)
+                elif ":" in line_clean and not line_clean.strip().endswith(":"):
+                    pob_cand = line_clean.split(":")[-1].strip()
+                elif "SURABAYA" in combined_upper:
                     pob_cand = "SURABAYA"
                 elif next_line and not any(kw in next_line.upper() for kw in ["DATE OF", "SEX", "NATIONALITY", "EXPIR"]):
                     pob_cand = next_line.strip()
 
                 if pob_cand and passport_data["place_of_birth"] == "N/A":
-                    pob_clean = re.sub(r'^(?:PLACE OF BIRTH|TEMPAT LAHIR)[:.\s/-]*', '', pob_cand, flags=re.IGNORECASE).strip()
+                    pob_clean = re.sub(r'\b(?:PLACE|LACE|OP|OF|BIRTH|LAIR|LAHIR|TEMPAT|TÉMPAT)\b', '', pob_cand, flags=re.IGNORECASE).strip()
                     pob_clean = re.sub(r'\b(?:\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}|\d{2}[-./]\d{2}[-./]\d{2,4})\b', '', pob_clean, flags=re.IGNORECASE).strip()
                     pob_clean = re.sub(r'\b(?:LM|M\s*/\s*L|F\s*/\s*P|MALE|FEMALE|SEX|GENDER|JENIS KELAMIN|L|P|M|F)\b', '', pob_clean, flags=re.IGNORECASE).strip()
                     pob_clean = re.sub(r'^[^\w]+|[^\w]+$', '', pob_clean).strip()
@@ -139,15 +144,15 @@ class PassportParser(BaseDocumentParser):
                         passport_data["place_of_birth"] = pob_clean.upper()
 
             # Date of Birth & Gender line context
-            if any(kw in line_upper for kw in ["TEMPAT LAHIR", "PLACE OF BIRTH"]) or "AUG" in line_upper or "[DOB_" in line_upper:
+            if any(kw in line_upper for kw in ["TEMPAT LAHIR", "TEMPAT LAIR", "PLACE OF BIRTH", "LACE OP"]) or "AUG" in line_upper or "[DOB_" in line_upper:
                 dob_m = re.search(date_pattern, combined_window, re.IGNORECASE)
                 if dob_m and passport_data["date_of_birth"] == "N/A":
                     passport_data["date_of_birth"] = dob_m.group(1)
 
                 if passport_data["gender"] == "N/A":
-                    if any(kw in combined_window.upper() for kw in [" LM", " L/M", " M/L", " MALE", " L ", " M "]):
+                    if any(kw in combined_upper for kw in [" LM", " L/M", " M/L", " MALE", " L ", " M "]):
                         passport_data["gender"] = "L / M"
-                    elif any(kw in combined_window.upper() for kw in [" PF", " P/F", " F/P", " FEMALE", " P ", " F "]):
+                    elif any(kw in combined_upper for kw in [" PF", " P/F", " F/P", " FEMALE", " P ", " F "]):
                         passport_data["gender"] = "P / F"
 
             # Issue Date & Expiry Date line context
@@ -168,26 +173,30 @@ class PassportParser(BaseDocumentParser):
                             passport_data["expiry_date"] = dates_filtered[0]
 
             # Issuing Office & Registration No line context
-            if any(kw in line_upper for kw in ["ISSUING OFFICE", "KANTOR YANG MENGELUARKAN", "NOREG", "NO. REG", "AUTHORITY"]):
-                reg_m = re.search(r'\b([1-9][A-Z0-9]{8,18}(?:-[A-Za-z0-9]+)?)\b', line + " " + next_line, re.IGNORECASE)
+            if any(kw in line_upper for kw in ["ISSUING OFFICE", "KANTOR YANG MENGELUARKAN", "NOREG", "NO. REG", "NO.REG", "NO.REG.", "AUTHORITY"]):
+                reg_m = re.search(r'(?:NO\.?\s*REG\.?|NOREG|REGISTRATION)\s*[:.\s/-]*([1-9][A-Za-z0-9]{8,18}(?:-[A-Za-z0-9]+)?)', line_clean + " " + next_line, re.IGNORECASE)
+                if not reg_m:
+                    reg_m = re.search(r'\b([1-9][A-Z0-9]{8,18}(?:-[A-Za-z0-9]+)?)\b', line_clean + " " + next_line, re.IGNORECASE)
                 if reg_m:
                     passport_data["registration_no"] = reg_m.group(1)
 
-                off_m = re.search(r'(?:ISSUING OFFICE|KANTOR YANG MENGELUARKAN)\s*[:.\s/-]*([^\n]+)', line, re.IGNORECASE)
-                if off_m:
-                    off_cand = off_m.group(1).strip()
-                    off_cand = re.sub(r'^(?:ISSUING OFFICE|KANTOR YANG MENGELUARKAN)[:.\s/-]*', '', off_cand, flags=re.IGNORECASE).strip()
-                    if off_cand and "OFFICE" not in off_cand.upper() and len(off_cand) > 3:
-                        passport_data["issuing_office"] = off_cand
-                if passport_data["issuing_office"] == "N/A" and next_line:
-                    next_l = next_line.strip()
-                    if next_l and not next_l.startswith(('P<', '[PASSPORT')):
-                        passport_data["issuing_office"] = next_l
+                off_city = re.search(r'\b(JAKARTA\s+[A-Z]+|SURABAYA|BANDUNG|MEDAN|SEMARANG|BALI|DENPASAR|YOGYAKARTA|MANADO|MAKASSAR|PALEMBANG|BATAM|KANIM\s+[A-Z\s]+)\b', line_upper + " " + next_line.upper())
+                if off_city:
+                    passport_data["issuing_office"] = off_city.group(0)
 
-        # Clean issuing_office of registration_no prefix
-        if passport_data["registration_no"] != "N/A" and passport_data["issuing_office"] != "N/A":
-            passport_data["issuing_office"] = passport_data["issuing_office"].replace(passport_data["registration_no"], "").strip()
-            passport_data["issuing_office"] = re.sub(r'^[^\w]+|[^\w]+$', '', passport_data["issuing_office"]).strip()
+                if passport_data["issuing_office"] == "N/A":
+                    off_m = re.search(r'(?:ISSUING OFFICE|KANTOR YANG MENGELUARKAN)\s*[:.\s/-]*([^\n]+)', line_clean, re.IGNORECASE)
+                    if off_m:
+                        off_cand = off_m.group(1).strip()
+                        off_cand = re.sub(r'^(?:ISSUING OFFICE|KANTOR YANG MENGELUARKAN)[:.\s/-]*', '', off_cand, flags=re.IGNORECASE).strip()
+                        if off_cand and "OFFICE" not in off_cand.upper() and len(off_cand) > 3:
+                            passport_data["issuing_office"] = off_cand
+
+        # Fallback registration_no if still N/A
+        if passport_data["registration_no"] == "N/A":
+            gen_reg_m = re.search(r'\b([1-9][A-Z0-9]{8,18}(?:-[A-Za-z0-9]+)?)\b', prompt)
+            if gen_reg_m and gen_reg_m.group(1) != passport_data["passport_number"]:
+                passport_data["registration_no"] = gen_reg_m.group(1)
 
         # Fallback gender if still N/A
         if passport_data["gender"] == "N/A":
