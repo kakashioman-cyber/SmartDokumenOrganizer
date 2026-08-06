@@ -73,7 +73,17 @@ class VendorDocumentParser(BaseDocumentParser):
             bill_m = re.search(r'(?:Bill\s*To|Ship\s*To|Customer\s*Name|Customer|Buyer|Kepada|Penerima)\s*[:.-]?[ \t]*\n?\s*([^\n|]+)', prompt, re.IGNORECASE)
             if bill_m:
                 c_cand = bill_m.group(1).strip()
-                c_cand = re.sub(r'[:.-]+$', '', c_cand).strip()
+                c_cand = re.sub(r'\b(?:TANGGAL|DATE|ALAMAT|ADDRESS)\b.*', '', c_cand, flags=re.IGNORECASE).strip(' :.-')
+                if not c_cand:
+                    # Look at next line after KEPADA
+                    for idx_k, l_k in enumerate(lines):
+                        if "KEPADA" in l_k.upper() and idx_k + 1 < len(lines):
+                            next_l = lines[idx_k + 1].strip()
+                            next_l = re.sub(r'\b(?:Senin|Selasa|Rabu|Kamis|Jumat|Sabtu|Minggu|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b.*', '', next_l, flags=re.IGNORECASE)
+                            next_l = re.sub(r'\b\d{1,2}\s+(?:Jan|Feb|Mar|Apr|Mei|Jun|Jul|Agu|Sep|Okt|Nov|Des|Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)\b.*', '', next_l, flags=re.IGNORECASE).strip(' ,.-')
+                            if len(next_l) >= 2:
+                                c_cand = next_l
+                                break
                 if c_cand and len(c_cand) > 1 and not re.match(r'^(?:Address|Contact|Email|GSTIN|Phone|Telp|Fax|PO|Date|No|---)\b', c_cand, re.IGNORECASE):
                     c_name = c_cand
 
@@ -106,10 +116,18 @@ class VendorDocumentParser(BaseDocumentParser):
                 v_name = re.sub(r'[:.-]+$', '', cand).strip()
 
         if v_name == "N/A":
+            m_nama = re.search(r'\b(?:Nama|Name|Vendor|Toko|Merchant|Store)\s*[:\-]\s*([A-Za-z0-9\s&.,\'\-]{3,40})', prompt, re.IGNORECASE)
+            if m_nama:
+                cand_v = m_nama.group(1).strip()
+                cand_v = re.split(r'\b(?:PAJAK|TAX|SUBTOTAL|TOTAL|NO\s*REK|TELP|BANK)\b', cand_v, flags=re.IGNORECASE)[0].strip(' :.-')
+                if len(cand_v) >= 3 and cand_v.upper() not in ["KEPADA", "TANGGAL", "PEMBAYARAN", "INVOICE"]:
+                    v_name = cand_v
+
+        if v_name == "N/A":
             for l in lines[:5]:
-                if not re.search(r'(?:Supplier|Vendor|Address|Contact|Email|Phone|GSTIN|PO|Invoice|Date|Tanggal|Page|Halaman|Qty|Satuan|Harga|Jumlah|Part\s*No|Deskripsi|---)', l, re.IGNORECASE):
-                    clean_l = re.split(r'[:\s]+(?:PO|INV|No|Tanggal)\b', l, flags=re.IGNORECASE)[0].strip()
-                    clean_l = re.sub(r'[:.-]+$', '', clean_l).strip()
+                clean_l = re.sub(r'\b(?:INVOICE|FAKTUR|NOTA|RECEIPT|BILL|STRUK)\b', '', l, flags=re.IGNORECASE).strip(' :-.')
+                clean_l = re.sub(r'^[^\w]+', '', clean_l).strip()
+                if not re.search(r'(?:Supplier|Vendor|Address|Contact|Email|Phone|GSTIN|PO|Invoice|Date|Tanggal|Page|Halaman|Qty|Satuan|Harga|Jumlah|Part\s*No|Deskripsi|FASHION TERLENGKAP|KEPADA|---)', clean_l, re.IGNORECASE):
                     if len(clean_l) > 2 and not clean_l.isdigit():
                         v_name = clean_l
                         break

@@ -475,10 +475,12 @@ class InvoiceParser(BaseDocumentParser):
                         for tok in [total, price, qty]:
                             if tok and tok != "-":
                                 desc = re.sub(r'\b' + re.escape(tok) + r'\b', '', desc)
+                        desc = re.sub(r'\b(?:RP|Rp|IDR|USD|\$|EUR|SGD|S\$)\b', '', desc, flags=re.IGNORECASE)
                         desc = re.sub(r'\s+[\d.,]{3,15}\s+[\d.,]{3,15}\s*$', '', desc)
                         desc = re.sub(r'\s+[\d.,]{3,15}\s*$', '', desc)
                     else:
                         desc = re.sub(r'\b\d{1,4}\s*$', '', desc)
+                        desc = re.sub(r'\b(?:RP|Rp|IDR|USD|\$|EUR|SGD|S\$)\b', '', desc, flags=re.IGNORECASE)
                         
                     desc = re.sub(r'\s+', ' ', desc).strip(' ,.-')
                     
