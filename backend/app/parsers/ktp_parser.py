@@ -117,7 +117,8 @@ class KTPParser(BaseDocumentParser):
         )
         if pob_dob_match:
             pob_raw = pob_dob_match.group(1).strip()
-            pob_clean = re.sub(r'1', 'Y', pob_raw)
+            pob_clean = re.sub(r'^(?:TEMPAT\s*[\/\s.-]*\s*TGL\s*[\/\s.-]*\s*LAHIR|TEMPAT\s*LAHIR|TEMPAL\s*[\/\s.-]*\s*TGL\s*[\/\s.-]*\s*LAHIR|TEMPAL\s*LAHIR)[:.\s/-]*', '', pob_raw, flags=re.IGNORECASE).strip()
+            pob_clean = re.sub(r'1', 'Y', pob_clean)
             pob_clean = re.sub(r'7', 'T', pob_clean)
             pob_clean = re.sub(r'6', 'G', pob_clean)
             if pob_clean and not any(kw in pob_clean.upper() for kw in ['NIK', 'PROVINSI', 'KOTA', 'NAMA', 'ADDRESS']):
@@ -132,12 +133,14 @@ class KTPParser(BaseDocumentParser):
                     if i > 0 and re.search(r'\d{1,2}[\s.\-/]+\d{1,2}[\s.\-/]+\d{2,4}', prompt_lines[i-1]):
                         pob_m = re.search(r'([A-Za-z0-9\s]+?)[,.:\s]+(\d{1,2}[\s.\-/]+\d{1,2}[\s.\-/]+\d{2,4})', prompt_lines[i-1])
                         if pob_m:
-                            ktp_data["place_of_birth"] = pob_m.group(1).strip()
+                            pob_c = re.sub(r'^(?:TEMPAT\s*[\/\s.-]*\s*TGL\s*[\/\s.-]*\s*LAHIR|TEMPAT\s*LAHIR|TEMPAL\s*[\/\s.-]*\s*TGL\s*[\/\s.-]*\s*LAHIR|TEMPAL\s*LAHIR)[:.\s/-]*', '', pob_m.group(1).strip(), flags=re.IGNORECASE).strip()
+                            ktp_data["place_of_birth"] = pob_c
                             ktp_data["date_of_birth"] = pob_m.group(2).strip().replace(' ', '-')
                             break
                     pob_m = re.search(r'(?:TEMPAT/TGL LAHIR|TEMPAT TGL LAHIR|LAHIR)\s*[:.-]?[ \t]*([A-Za-z0-9\s]+)', l, flags=re.IGNORECASE)
                     if pob_m:
                         pob_cand = pob_m.group(1).split(',')[0].strip()
+                        pob_cand = re.sub(r'^(?:TEMPAT\s*[\/\s.-]*\s*TGL\s*[\/\s.-]*\s*LAHIR|TEMPAT\s*LAHIR|TEMPAL\s*[\/\s.-]*\s*TGL\s*[\/\s.-]*\s*LAHIR|TEMPAL\s*LAHIR)[:.\s/-]*', '', pob_cand, flags=re.IGNORECASE).strip()
                         pob_cand = re.sub(r'1', 'Y', pob_cand)
                         if pob_cand and not any(kw in pob_cand.upper() for kw in ["JENIS", "ALAMAT", "GOL", "NIK"]):
                             ktp_data["place_of_birth"] = pob_cand
