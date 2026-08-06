@@ -390,6 +390,9 @@ class VendorDocumentParser(BaseDocumentParser):
                     clean_words.append(w)
                 desc_clean = ' '.join(clean_words).strip()
                 desc_clean = re.sub(r'^\d{3,}\s*', '', desc_clean)
+                desc_clean = re.sub(r'\b\d{1,3}%\s*\d*\b', '', desc_clean)
+                desc_clean = re.sub(r'\b(?:Rp|RP|IDR|USD|\$|EUR|SGD|S\$)\s*[\d.,]+\b', '', desc_clean, flags=re.IGNORECASE)
+                desc_clean = re.sub(r'\s+', ' ', desc_clean).strip(' ,.-')
 
                 parsed_items.append({
                     'no': str(k + 1),

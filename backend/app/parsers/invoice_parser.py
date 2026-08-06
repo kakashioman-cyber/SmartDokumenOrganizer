@@ -461,7 +461,7 @@ class InvoiceParser(BaseDocumentParser):
                                                 })
 
                     if math_cands:
-                        best_c = max(math_cands, key=lambda x: (x["tot_val"], x["p_val"]))
+                        best_c = max(math_cands, key=lambda x: (5000000 if int(x["qty"]) > 1 else 0) + x["tot_val"] * 1000 + x["p_val"])
                         qty, price, total = best_c["qty"], best_c["price"], best_c["total"]
 
                     if not qty:
@@ -485,18 +485,20 @@ class InvoiceParser(BaseDocumentParser):
                         for tok in [total, price, qty]:
                             if tok and tok != "-":
                                 desc = re.sub(r'(?:Rp|RP|IDR|USD|\$|EUR|SGD|S\$)?\s*' + re.escape(tok) + r'\b', '', desc, flags=re.IGNORECASE)
+                        desc = re.sub(r'\b\d{1,3}%\s*\d*\b', '', desc)
                         desc = re.sub(r'\b(?:Rp|RP|IDR|USD|\$|EUR|SGD|S\$)\s*[\d.,]+\b', '', desc, flags=re.IGNORECASE)
                         desc = re.sub(r'\b(?:RP|Rp|IDR|USD|\$|EUR|SGD|S\$)\b', '', desc, flags=re.IGNORECASE)
-                        desc = re.sub(r'\s+[\d.,]{3,15}\s+[\d.,]{3,15}\s*$', '', desc)
-                        desc = re.sub(r'\s+[\d.,]{3,15}\s*$', '', desc)
+                        desc = re.sub(r'\s+[\d.,]{1,15}\s+[\d.,]{1,15}\s*$', '', desc)
+                        desc = re.sub(r'\s+[\d.,]{1,15}\s*$', '', desc)
                     else:
                         desc = re.sub(r'\b\d{1,4}\s*$', '', desc)
+                        desc = re.sub(r'\b\d{1,3}%\s*\d*\b', '', desc)
                         desc = re.sub(r'\b(?:Rp|RP|IDR|USD|\$|EUR|SGD|S\$)\s*[\d.,]+\b', '', desc, flags=re.IGNORECASE)
                         desc = re.sub(r'\b(?:RP|Rp|IDR|USD|\$|EUR|SGD|S\$)\b', '', desc, flags=re.IGNORECASE)
                         
                     desc = re.sub(r'\s+', ' ', desc).strip(' ,.-')
                     
-                    if qty and price and total and desc and desc.upper() not in ["NO.", "NO", "DESKRIPSI", "PART NO", "NO PART NO", "QUANTITY", "UNIT PRICE", "TOTAL"]:
+                    if qty and price and total and desc and desc.upper() not in ["NO.", "NO", "DESKRIPSI", "PART NO", "NO PART NO", "QUANTITY", "UNIT PRICE", "TOTAL", "% AMOUNT", "NET AMOUNT", "GROSS AMT", "DISCOUNT DETAIL", "UOM"]:
                         return {
                             "no": str(len(invoice_data["items"]) + 1),
                             "sku": sku,
