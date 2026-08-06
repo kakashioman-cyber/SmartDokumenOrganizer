@@ -3,60 +3,34 @@ from .base_parser import BaseDocumentParser
 
 def format_ktp_name(name: str) -> str:
     """
-    Generic, zero-hardcode Indonesian name segmenter:
-    If a name string has no spaces (e.g. OCR read 'ABDURROHMANROBBANY' or 'HAMIDAHSALIMAH'),
-    algorithmically identifies morphological word boundaries (suffixes like MAN, DAH, MAH, WAN, YAN, LAN)
-    and inserts spaces cleanly without any hardcoded dictionary lists.
+    Format extracted name string generically.
+    Performs standard whitespace trimming and CamelCase separation.
+    No hardcoded name lists or hardcoded suffixes.
     """
-    if not name or name == 'N/A' or ' ' in name.strip() or len(name.strip()) < 8 or name.startswith('[NAME_'):
+    if not name or name == 'N/A' or name.startswith('[NAME_'):
         return name
         
     s = name.strip()
 
-    # 1. CamelCase split (e.g. HamidahSalimah -> Hamidah Salimah)
+    # Split CamelCase if mixed case exists (e.g. FirstLast -> First Last)
     if re.search(r'[a-z][A-Z]', s):
         return re.sub(r'([a-z])([A-Z])', r'\1 \2', s)
 
-    clean_u = s.upper()
-    vowels = set('AEIOU')
-
-    # Generic morphological suffixes that mark syllable boundaries between Indonesian name components
-    GENERIC_NAME_SUFFIXES = ['MAN', 'DAH', 'MAH', 'LAH', 'WAN', 'YAN', 'LAN', 'TON', 'RIN', 'TUN', 'GUNG', 'PUT', 'RUL', 'DIL', 'SAM', 'RAM']
-
-    candidates = []
-    for suf in GENERIC_NAME_SUFFIXES:
-        for m in re.finditer(suf, clean_u):
-            idx = m.end()
-            if 3 <= idx <= len(clean_u) - 3:
-                p1, p2 = clean_u[:idx], clean_u[idx:]
-                if any(c in vowels for c in p1) and any(c in vowels for c in p2):
-                    candidates.append((len(p1), p1, p2))
-
-    if candidates:
-        # Select the longest valid first-word boundary candidate
-        candidates.sort(key=lambda x: x[0], reverse=True)
-        best = candidates[0]
-        return f"{best[1]} {best[2]}"
-
-    return name
+    return s
 
 def format_ktp_address(addr: str) -> str:
+    """
+    Format extracted address string generically.
+    Applies standard structural punctuation spacing (JL. and NO.).
+    No hardcoded place or street names.
+    """
     if not addr or addr == 'N/A' or addr.startswith('[ADDRESS_'):
         return addr
 
-    # 1. Add dot to JL. if missing
-    addr = re.sub(r'^(?:JL\.?|JALAN)\s*([A-Za-z])', r'JL. \1', addr, flags=re.IGNORECASE)
-    
-    # 2. Separate concatenated directions or modifiers: KETINTANGBARU -> KETINTANG BARU
-    addr = re.sub(r'([A-Za-z]{3,})(BARU|LAMA|TIMUR|BARAT|SELATAN|UTARA)', r'\1 \2', addr, flags=re.IGNORECASE)
+    # 1. Format street prefix (JL / JALAN)
+    addr = re.sub(r'^(?:JL\.?|JALAN)\s*([A-Za-z0-9])', r'JL. \1', addr, flags=re.IGNORECASE)
 
-    # 3. Separate Roman numerals attached to words (e.g. BARUIV -> BARU IV)
-    addr = re.sub(r'([A-Za-z]{2,})\s*(IV|VI|VII|VIII|IX|X|III|II|I)(?=\s|NO|\d|$)', r'\1 \2', addr, flags=re.IGNORECASE)
-
-    # 4. Separate Roman numerals attached to NO (e.g. IVNO -> IV NO)
-    addr = re.sub(r'\b(IV|VI|VII|VIII|IX|X|III|II|I)\s*(NO|NOMOR|\d+)', r'\1 \2', addr, flags=re.IGNORECASE)
-
-    # 5. Format NO. 20
+    # 2. Format house/building number (NO. <digits>)
     addr = re.sub(r'\b(NO|NOMOR)\.?\s*(\d+)', r'NO. \2', addr, flags=re.IGNORECASE)
 
     return re.sub(r'\s+', ' ', addr).strip()
