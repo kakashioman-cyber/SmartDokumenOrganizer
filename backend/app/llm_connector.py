@@ -463,10 +463,15 @@ def analyze_document_image(image_bytes: bytes, doc_type: str = "auto", provider:
             models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-flash-latest"]
             
             prompt_text = f"""Extract structured JSON for document category: '{effective_type}'.
-Return ONLY valid JSON with fields: vendor_name, customer_name, invoice_number, po_number, invoice_date, order_date, due_date, delivery_date, subtotal, tax, tax_amount, total_amount, currency, items (array of {{no, sku, description, qty, unit, unit_price, total}}).
+Return ONLY valid JSON with fields: vendor_name, customer_name, id_number, full_name, place_of_birth, date_of_birth, gender, blood_type, address, rt_rw, kel_desa, kecamatan, religion, marital_status, occupation, nationality, issue_date, expiry_date, issuing_office, invoice_number, po_number, invoice_date, order_date, due_date, delivery_date, subtotal, tax, tax_amount, total_amount, currency, items (array of {{no, sku, description, qty, unit, unit_price, total}}).
 CRITICAL EXTRACTION RULES:
-1. Currency: Detect the EXACT currency printed on document.
-2. Return strictly valid JSON object."""
+1. Currency: Detect the EXACT currency printed on the document (e.g., SGD, USD, EUR, IDR, INR). If SGD or S$ is present, set currency to "SGD". If USD or $ is present, set currency to "USD". Output "IDR" ONLY if Rp or IDR is printed.
+2. PO Number: Extract PO number from "No. PO", "PO #", "PO-...", "Purchase Order".
+3. Dates: Extract specific dates if printed separately (invoice_date, order_date, due_date, delivery_date, issue_date, date_of_birth). If only a single generic "Tanggal" or "Date" is printed, assign it to invoice_date and order_date.
+4. Part No / SKU: Extract "Part No", "Part Number", "Kode Barang", "SKU" into the "sku" field for each item (e.g. AN-BRG-895).
+5. Tax: Extract ANY tax rate printed on document (e.g., 12%, 11%, 10%, 9%, 8%, 7%, 5%, 0%, PPN, GST, VAT) into "tax" and the tax amount into "tax_amount".
+6. Item Description: Keep ONLY the primary product/item title line. Exclude secondary sub-text, specs, comments, notes, or multi-line remarks.
+7. Return strictly valid JSON object without markdown formatting."""
 
             payload = {
                 "contents": [{
