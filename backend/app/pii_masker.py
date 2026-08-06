@@ -154,7 +154,8 @@ class PIIMasker:
             for m in ADDRESS_CONTEXT_REGEX.finditer(text):
                 val = m.group(1) if m.group(1) else m.group(0)
                 val = re.sub(r'^(?:Alamat|Address)[:.;,\s-]*', '', val, flags=re.IGNORECASE).strip()
-                if val:
+                # Skip if val is an RT/RW pattern (e.g. 005/002) or label
+                if val and not re.match(r'^\d{1,3}/\d{1,3}$', val) and not any(kw in val.upper() for kw in ['RT/RW', 'RTARW', 'KELURAHAN', 'KECAMATAN', 'AGAMA', 'PEKERJAAN']):
                     start_pos = text.find(val, m.start())
                     if start_pos != -1:
                         matches.append({
@@ -163,6 +164,23 @@ class PIIMasker:
                             'type': 'ADDRESS',
                             'value': val
                         })
+            
+            # Additional check for inverted layout (address line above 'Alamat' label)
+            lines_txt = text.split('\n')
+            for idx, l_txt in enumerate(lines_txt):
+                if l_txt.strip().upper() in ['ALAMAT', 'ALAMAT:']:
+                    if idx > 0:
+                        prev_l = lines_txt[idx - 1].strip()
+                        if any(kw in prev_l.upper() for kw in ['JL.', 'JL', 'JALAN']) or len(prev_l) >= 8:
+                            if not any(kw in prev_l.upper() for kw in ['JENIS', 'KELAMIN', 'LAKI', 'PEREMPUAN', 'GOL', 'NIK']):
+                                start_pos = text.find(prev_l)
+                                if start_pos != -1:
+                                    matches.append({
+                                        'start': start_pos,
+                                        'end': start_pos + len(prev_l),
+                                        'type': 'ADDRESS',
+                                        'value': prev_l
+                                    })
 
         if 'PRICE' in self.enabled_types:
             for m in PRICE_REGEX.finditer(text):
@@ -177,6 +195,9 @@ class PIIMasker:
             for m in NAME_CONTEXT_REGEX.finditer(text):
                 name_val = m.group(1).strip()
                 if any(kw in name_val.upper() for kw in ["PAYABLE", "INVOICE", "ORDER", "SUBTOTAL", "TOTAL", "AMOUNT", "TEMPAT", "TEMPAL", "LAHIR", "TGL", "PROVINSI", "KOTA", "KABUPATEN", "AGAMA", "PEKERJAAN", "STATUS", "BERLAKU", "NIK", "GOL", "JENIS", "KELAMIN", "ALAMAT"]):
+                    continue
+                # Skip city names or city-date lines (e.g. SURABAYA,28-06-1965) from being masked as NAME
+                if re.search(r'[,.:\s]+\d{1,2}[\s.\-/]+\d{1,2}[\s.\-/]+\d{2,4}', text[m.start():m.end()+20]) or re.search(r'\b(?:SURABAYA|JAKARTA|BANDUNG|MEDAN|SEMARANG|BALI|MALANG|MAKASSAR|YOGYAKARTA|SOLO|DENPASAR|PALEMBANG|BATAM|PEKANBARU|BOGOR|BEKASI|TANGERANG|DEPOK)\b', name_val.upper()):
                     continue
                 full_match = m.group()
                 start_offset = full_match.index(name_val)
@@ -193,21 +214,33 @@ class PIIMasker:
                     'value': name_val
                 })
 
-            # KTP Name Line Matcher (All-caps line between NIK and Nama/Tempat)
+            # KTP Name Line Matcher (Supports normal and inverted label-above/below layouts)
             lines_txt = text.split('\n')
             for idx, l_txt in enumerate(lines_txt):
                 if 'NIK' in l_txt.upper() or re.search(r'\b\d{16}\b', l_txt):
-                    for sub_l in lines_txt[idx+1 : idx+4]:
-                        sub_c = sub_l.strip()
-                        if sub_c and not any(kw in sub_c.upper() for kw in ['NIK', 'NAMA', 'PROVINSI', 'KOTA', 'KABUPATEN', 'TEMPAT', 'TEMPAL', 'LAHIR', 'TGL', 'AGAMA', 'GOL', 'JENIS', 'ALAMAT', 'RT', 'RW']):
-                            if re.match(r'^[A-Za-z\s]{3,50}$', sub_c):
-                                start_pos = text.find(sub_c)
+                    for sub_idx in range(idx + 1, min(idx + 5, len(lines_txt))):
+                        sub_l = lines_txt[sub_idx].strip()
+                        if sub_l.upper() in ['NAMA', 'NAMA:']:
+                            prev_l = lines_txt[sub_idx - 1].strip() if sub_idx > 0 else ''
+                            if prev_l and not any(kw in prev_l.upper() for kw in ['NIK', 'PROVINSI', 'KOTA', 'KABUPATEN']):
+                                start_pos = text.find(prev_l)
                                 if start_pos != -1:
                                     matches.append({
                                         'start': start_pos,
-                                        'end': start_pos + len(sub_c),
+                                        'end': start_pos + len(prev_l),
                                         'type': 'NAME',
-                                        'value': sub_c
+                                        'value': prev_l
+                                    })
+                                break
+                        elif sub_l and not any(kw in sub_l.upper() for kw in ['NIK', 'NAMA', 'PROVINSI', 'KOTA', 'KABUPATEN', 'TEMPAT', 'TEMPAL', 'LAHIR', 'TGL', 'AGAMA', 'GOL', 'JENIS', 'ALAMAT', 'RT', 'RW']):
+                            if re.match(r'^[A-Za-z.\s]{3,50}$', sub_l):
+                                start_pos = text.find(sub_l)
+                                if start_pos != -1:
+                                    matches.append({
+                                        'start': start_pos,
+                                        'end': start_pos + len(sub_l),
+                                        'type': 'NAME',
+                                        'value': sub_l
                                     })
                                 break
 
