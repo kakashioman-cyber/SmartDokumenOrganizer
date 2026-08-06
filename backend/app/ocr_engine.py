@@ -105,15 +105,15 @@ def run_paddle_ocr_fallback(np_img):
         return ""
     try:
         logger.info("Running Primary PaddleOCR Engine (Optimized High-Speed)...")
-        prep_img = enhance_document_image(np_img)
         
-        # High-Speed Image Resizing (Limit max dimension to 1600px for 5x-10x CPU acceleration)
-        h, w = prep_img.shape[:2]
-        max_dim = 1600
+        # High-Speed Image Resizing FIRST (Limit max dimension to 1280px for 3x-5x CPU acceleration)
+        h, w = np_img.shape[:2]
+        max_dim = 1280
         if max(h, w) > max_dim:
             scale_factor = max_dim / float(max(h, w))
-            prep_img = cv2.resize(prep_img, (int(w * scale_factor), int(h * scale_factor)), interpolation=cv2.INTER_AREA)
+            np_img = cv2.resize(np_img, (int(w * scale_factor), int(h * scale_factor)), interpolation=cv2.INTER_AREA)
 
+        prep_img = enhance_document_image(np_img)
         result = p_engine.ocr(prep_img)
         if not result:
             return ""
