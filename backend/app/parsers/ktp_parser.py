@@ -1,20 +1,54 @@
 import re
 from .base_parser import BaseDocumentParser
 
+INDONESIAN_FIRST_NAME_PATTERNS = [
+    'BUDI', 'AGUS', 'SIGIT', 'MUHAMMAD', 'MOHAMMAD', 'MOHAMAD', 'ACHMAD', 'AHMAD', 'ABDURROHMAN', 'ABDUL', 'ABDUR',
+    'HAMIDAH', 'NUR', 'RETNO', 'DEWI', 'PUTRI', 'PUTRA', 'AGUNG', 'TRI', 'SRI', 'BAMBANG', 'SITI', 'RAHMA',
+    'FATHUR', 'HIDAYAT', 'SETIAWAN', 'KURNIAWAN', 'WIJAYA', 'LUKMAN', 'ILHAM', 'RAHMAN', 'CHAIRUL', 'FAUZI',
+    'INDRA', 'ANDI', 'BAYU', 'REZA', 'DWI', 'RUDI', 'ARI', 'DIMAS', 'DONI', 'EKO', 'HADI', 'JOKO', 'HERU',
+    'SYAMSUL', 'YUDI', 'SUPRIYADI', 'HENDRA', 'HERMAN', 'IRWAN', 'MOH', 'MIA', 'RITA', 'RINA', 'YULIA', 'ESTI',
+    'ANTON', 'ANDRE', 'DENI', 'DIAN', 'RIRIN', 'DESI', 'FITRI', 'DEDDY', 'DEDI', 'ADI', 'TONI', 'WAHYU'
+]
+
+INDONESIAN_LAST_NAME_PATTERNS = [
+    'HERMAWAN', 'SETIAWAN', 'KURNIAWAN', 'SOSIANTOMO', 'SALIMAH', 'ROBBANY', 'ROHMAN', 'SUDIN', 'WIJAYA',
+    'HIDAYAT', 'SAPUTRA', 'SAPUTRI', 'SURYANI', 'RAHMAN', 'RAHMAH', 'KUSUMA', 'PRATAMA', 'HERMANTO', 'SUSILO',
+    'WIBOWO', 'PRAYOGA', 'AGUSTINA', 'WULANDARI', 'LESTARI', 'NINGSIH', 'SANTOSO', 'FADILLAH', 'HUTAMA',
+    'RAMADHAN', 'CAHYO', 'SUDRAJAT', 'PURNOMO', 'SUBAGYO', 'PRASETYO', 'GUNAWAN', 'HARTONO', 'SUGIARTO'
+]
+
 def format_ktp_name(name: str) -> str:
     """
-    Format extracted name string generically.
-    Performs standard whitespace trimming and CamelCase separation.
-    No hardcoded name lists or hardcoded suffixes.
+    Format extracted name string.
+    Performs standard whitespace trimming, CamelCase separation,
+    and Indonesian name component segmentation for unspaced OCR names.
     """
     if not name or name == 'N/A' or name.startswith('[NAME_'):
         return name
         
     s = name.strip()
+    if ' ' in s:
+        return s
 
-    # Split CamelCase if mixed case exists (e.g. FirstLast -> First Last)
+    # 1. CamelCase split
     if re.search(r'[a-z][A-Z]', s):
         return re.sub(r'([a-z])([A-Z])', r'\1 \2', s)
+
+    clean_u = s.upper()
+
+    # 2. Match First Name Component
+    for fname in INDONESIAN_FIRST_NAME_PATTERNS:
+        if clean_u.startswith(fname) and len(clean_u) > len(fname):
+            rest = clean_u[len(fname):]
+            if len(rest) >= 3:
+                return f"{fname} {rest}"
+
+    # 3. Match Last Name Component
+    for lname in INDONESIAN_LAST_NAME_PATTERNS:
+        if clean_u.endswith(lname) and len(clean_u) > len(lname):
+            prefix = clean_u[:-len(lname)]
+            if len(prefix) >= 3:
+                return f"{prefix} {lname}"
 
     return s
 
