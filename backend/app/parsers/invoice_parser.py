@@ -434,17 +434,26 @@ class InvoiceParser(BaseDocumentParser):
                             floats.append((n, float(c_n)))
                             
                     qty, price, total = None, None, None
+                    math_cands = []
                     for i_q, (_, q_v) in enumerate(floats):
-                        for i_p, (p_str, p_v) in enumerate(floats):
-                            if i_p != i_q:
-                                for i_t, (t_str, t_v) in enumerate(floats):
-                                    if i_t != i_q and i_t != i_p:
-                                        if abs(q_v * p_v - t_v) < 1.0 and t_v >= p_v and q_v >= 1:
-                                            qty, price, total = str(int(q_v)), p_str, t_str
-                                            break
-                                if qty: break
-                        if qty: break
-                        
+                        if 1 <= q_v <= 1000:
+                            for i_p, (p_str, p_v) in enumerate(floats):
+                                if i_p != i_q:
+                                    for i_t, (t_str, t_v) in enumerate(floats):
+                                        if i_t != i_q and i_t != i_p:
+                                            if abs(q_v * p_v - t_v) < 1.0 and t_v >= p_v:
+                                                math_cands.append({
+                                                    "qty": str(int(q_v)),
+                                                    "price": p_str,
+                                                    "total": t_str,
+                                                    "tot_val": t_v,
+                                                    "p_val": p_v
+                                                })
+
+                    if math_cands:
+                        best_c = max(math_cands, key=lambda x: (x["tot_val"], x["p_val"]))
+                        qty, price, total = best_c["qty"], best_c["price"], best_c["total"]
+
                     if not qty:
                         q_cand = re.search(r'^\s*(\d{1,4})\b|\b(\d{1,4})\s*$', desc_line)
                         if q_cand:
@@ -498,7 +507,7 @@ class InvoiceParser(BaseDocumentParser):
                                 if i_p != i_q:
                                     for i_t, t_v in enumerate(floats):
                                         if i_t != i_q and i_t != i_p:
-                                            if abs(q_v * p_v - t_v) < 1.0 and t_v >= p_v:
+                                            if abs(q_v * p_v - t_v) < 1.0 and t_v >= p_v and t_v >= 100:
                                                 return True
                     return False
 
