@@ -459,7 +459,19 @@ class InvoiceParser(BaseDocumentParser):
                     desc = desc_line
                     if sku != "-": desc = desc.replace(sku, "")
                     desc = re.sub(r'^\s*\d+[\s.]+', '', desc)
-                    desc = re.sub(r'\b\d{1,4}\s*$', '', desc).strip(' ,.-')
+                    
+                    if num_line == desc_line:
+                        if unit:
+                            desc = re.sub(r'\b' + re.escape(unit) + r'\b', '', desc, flags=re.IGNORECASE)
+                        for tok in [total, price, qty]:
+                            if tok and tok != "-":
+                                desc = re.sub(r'\b' + re.escape(tok) + r'\b', '', desc)
+                        desc = re.sub(r'\s+[\d.,]{3,15}\s+[\d.,]{3,15}\s*$', '', desc)
+                        desc = re.sub(r'\s+[\d.,]{3,15}\s*$', '', desc)
+                    else:
+                        desc = re.sub(r'\b\d{1,4}\s*$', '', desc)
+                        
+                    desc = re.sub(r'\s+', ' ', desc).strip(' ,.-')
                     
                     if qty and price and total and desc and desc.upper() not in ["NO.", "NO", "DESKRIPSI", "PART NO", "NO PART NO", "QUANTITY", "UNIT PRICE", "TOTAL"]:
                         return {
@@ -473,13 +485,37 @@ class InvoiceParser(BaseDocumentParser):
                         }
                     return None
 
+                def is_self_contained_single_line(line_str):
+                    text_alpha = re.sub(r'[\d.,\s\-\/\#:]', '', line_str)
+                    text_alpha = re.sub(r'\b(?:UNIT|BOX|PCS|SET|BATANG|LEMBAR|ROLL|KG|METER|LITER|CAN|DRUM|BOTOL|PAIL|DUS|PACK|LOT|BAG|EACH|UOM|PKS|BTL)\b', '', text_alpha, flags=re.IGNORECASE)
+                    if len(text_alpha.strip()) < 3:
+                        return False
+                    raw_nums = re.findall(r'[\d.,]{1,15}', line_str)
+                    floats = [float(n.replace('.', '').replace(',', '')) for n in raw_nums if n.replace('.', '').replace(',', '').isdigit()]
+                    for i_q, q_v in enumerate(floats):
+                        if 1 <= q_v <= 1000:
+                            for i_p, p_v in enumerate(floats):
+                                if i_p != i_q:
+                                    for i_t, t_v in enumerate(floats):
+                                        if i_t != i_q and i_t != i_p:
+                                            if abs(q_v * p_v - t_v) < 1.0 and t_v >= p_v:
+                                                return True
+                    return False
+
+                if is_self_contained_single_line(l1):
+                    p_self = try_parse_pair(l1, l1)
+                    if p_self:
+                        invoice_data["items"].append(p_self)
+                        alt_i += 1
+                        continue
+
                 p1 = try_parse_pair(l1, l2)
-                if p1:
+                if p1 and not is_self_contained_single_line(l2):
                     invoice_data["items"].append(p1)
                     alt_i += 2
                     continue
                 p2 = try_parse_pair(l2, l1)
-                if p2:
+                if p2 and not is_self_contained_single_line(l1):
                     invoice_data["items"].append(p2)
                     alt_i += 2
                     continue
