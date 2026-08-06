@@ -134,7 +134,7 @@ export default function CustomControlPanel({
                 <Shield className="w-5 h-5 text-emerald-400 shrink-0" />
                 <div className="text-left">
                   <div className="font-bold text-sm">Local PaddleOCR + Smart Rule Parser</div>
-                  <div className="text-[10px] text-emerald-400 font-semibold">100% Offline, Privacy Terjamin, Super Cepat (&lt;1s)</div>
+                  <div className="text-[10px] text-emerald-400 font-semibold">100% Offline, Privacy Terjamin</div>
                 </div>
               </button>
             </div>

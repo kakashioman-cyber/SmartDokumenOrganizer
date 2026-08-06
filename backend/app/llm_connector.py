@@ -121,17 +121,20 @@ def clean_api_key(k: str) -> str:
 def sanitize_category_fields(data: dict, effective_type: str) -> dict:
     cat = effective_type.lower().strip()
     if cat == "ktp":
+        from app.parsers.ktp_parser import format_ktp_name, format_ktp_address
         nik_val = str(data.get("id_number") or data.get("nik") or data.get("invoice_number") or "").strip()
         pob = data.get("place_of_birth") or data.get("tempat_lahir", "N/A")
         dob = data.get("date_of_birth") or data.get("tanggal_lahir", "N/A")
+        raw_name = str(data.get("full_name") or data.get("nama") or data.get("customer_name") or "N/A").strip()
+        raw_addr = str(data.get("address") or data.get("alamat", "N/A")).strip()
         return {
             "id_number": nik_val if (nik_val and len(nik_val) >= 12 and nik_val != "N/A") else str(data.get("id_number", "N/A")),
-            "full_name": str(data.get("full_name") or data.get("nama") or data.get("customer_name") or "N/A").strip(),
+            "full_name": format_ktp_name(raw_name),
             "place_of_birth": str(pob).strip(),
             "date_of_birth": str(dob).strip(),
             "gender": str(data.get("gender") or data.get("jenis_kelamin", "N/A")).strip(),
             "blood_type": str(data.get("blood_type") or data.get("gol_darah", "N/A")).strip(),
-            "address": str(data.get("address") or data.get("alamat", "N/A")).strip(),
+            "address": format_ktp_address(raw_addr),
             "rt_rw": str(data.get("rt_rw", "N/A")).strip(),
             "kel_desa": str(data.get("kel_desa", "N/A")).strip(),
             "kecamatan": str(data.get("kecamatan", "N/A")).strip(),
