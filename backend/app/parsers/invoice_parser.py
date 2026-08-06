@@ -107,12 +107,12 @@ class InvoiceParser(BaseDocumentParser):
         for line in lines[:8]:
             l_str = line.strip()
             l_clean = clean_ocr_typos(l_str)
-            if any(kw in l_clean.upper() for kw in ["PT.", "CV.", "UD.", "INC", "CORP", "LTD", "LIMITED", "TBK", "SDN BHD", "SA", "GMBH"]):
+            if re.search(r'\b(?:PT|CV|UD|INC|CORP|LTD|LIMITED|TBK|SDN\s*BHD|SA|GMBH)\b', l_clean, re.IGNORECASE):
                 if not any(kw in l_clean.upper() for kw in ["CUSTOMER", "BILL TO", "SHIP TO", "ATTN", "KEPADA"]):
                     cand_v = re.split(r'(?i)\b(?:INVOICE|FAKTUR|NUMBER|NO\.|INV|DATE|DUE|TGL)\b', l_clean)[0].strip()
                     cand_v = re.sub(r'^(?:PT\.?|CV\.?|UD\.?)\s*', '', cand_v, flags=re.IGNORECASE).strip()
                     if cand_v and len(cand_v) > 2:
-                        invoice_data["vendor_name"] = f"PT. {cand_v}" if "PT" in l_clean.upper() else cand_v
+                        invoice_data["vendor_name"] = f"PT. {cand_v}" if re.search(r'\bPT\b', l_clean, re.IGNORECASE) else cand_v
                         break
 
         # 2. Generic Vendor Name Detection (If top lines didn't match)
@@ -141,6 +141,14 @@ class InvoiceParser(BaseDocumentParser):
                     invoice_data["vendor_name"] = cand_v
 
         if invoice_data["vendor_name"] == "N/A":
+            org_m = re.search(r'\b(?:PT|CV|UD|Tbk|Ltd|Corp|Inc|Store|Shop)\b[ \t]+[A-Za-z0-9_\s.-]+', prompt, re.IGNORECASE)
+            if org_m:
+                cand_org = org_m.group(0).strip()
+                cand_org = re.split(r'[\n|]', cand_org)[0].strip()
+                cand_org = re.split(r'\b(?:Invoice|PO|No|Tanggal|Mata Uang)\b', cand_org, flags=re.IGNORECASE)[0].strip()
+                invoice_data["vendor_name"] = re.sub(r'[:.-]+$', '', cand_org).strip()
+
+        if invoice_data["vendor_name"] == "N/A":
             for line in lines[:8]:
                 clean_l = line.strip()
                 if clean_l.startswith("---") or "PAGE" in clean_l.upper():
@@ -158,9 +166,9 @@ class InvoiceParser(BaseDocumentParser):
                         invoice_data["vendor_name"] = v
                         break
                 elif not any(kw in l_upper for kw in ["SUBMITTED", "KEPADA", "BILL TO", "INVOICE FOR", "TANGGAL", "DATE", "PHONE", "TELP", "JALAN", "JL", "RUKO", "NO PART", "PART NO", "DESKRIPSI", "SATUAN", "HARGA", "JUMLAH", "QTY", "PRODUCT", "DESCRIPTION", "PRICE", "TOTAL", "AMOUNT", "FASHION TERLENGKAP", "NAME_", "DOB_", "EMAIL_"]) and len(clean_l) > 3:
-                    v = re.split(r'\b(INVOICE|INV|NUMBER|NOTA|STRUK|DATE|TELP|EMAIL|JALAN|JL|JL\.|JAKARTA|RUKO|GEDUNG)\b', clean_l, flags=re.IGNORECASE)[0].strip()
+                    v = re.split(r'\b(INVOICE|INV|NUMBER|NOTA|STRUK|DATE|TELP|EMAIL|JALAN|JL|JL\.|JAKARTA|RUKO|GEDUNG|NO|PART|DESKRIPSI|QTY|SATUAN|HARGA|JUMLAH)\b', clean_l, flags=re.IGNORECASE)[0].strip()
                     v = re.sub(r'^[|:\s\-+]+|[|:\s\-+]+$', '', v).strip()
-                    if len(v) > 2 and not any(kw in v.upper() for kw in ["FOR", "DETAILS", "PURCHASE ORDER", "PURCHASEORDER", "PURCHASE", "ORDER", "SURAT JALAN", "FAKTUR", "INVOICE", "DESKRIPSI", "SATUAN", "HARGA", "JUMLAH"]):
+                    if len(v) > 2 and not any(kw in v.upper() for kw in ["FOR", "DETAILS", "PURCHASE ORDER", "PURCHASEORDER", "PURCHASE", "ORDER", "SURAT JALAN", "FAKTUR", "INVOICE", "DESKRIPSI", "SATUAN", "HARGA", "JUMLAH", "PART NO", "NO PART"]):
                         invoice_data["vendor_name"] = v
                         break
 
@@ -493,7 +501,8 @@ class InvoiceParser(BaseDocumentParser):
                         desc = re.sub(r'\b(?:Rp|RP|IDR|USD|\$|EUR|SGD|S\$)\s*[\d.,]+\b', '', desc, flags=re.IGNORECASE)
                         desc = re.sub(r'\b(?:RP|Rp|IDR|USD|\$|EUR|SGD|S\$)\b', '', desc, flags=re.IGNORECASE)
                         desc = re.sub(r'\s+[\d.,]{1,15}\s+[\d.,]{1,15}\s*$', '', desc)
-                        desc = re.sub(r'\s+[\d.,]{1,15}\s*$', '', desc)
+                        if not re.search(r'(?:[×x\*M\d]|inch|mm|cm|m)\s*\d+\s*$', desc, re.IGNORECASE):
+                            desc = re.sub(r'\s+[\d.,]{1,15}\s*$', '', desc)
                     else:
                         desc = re.sub(r'\b\d{1,4}\s*$', '', desc)
                         desc = re.sub(r'\b\d{1,3}%\s*\d*\b', '', desc)

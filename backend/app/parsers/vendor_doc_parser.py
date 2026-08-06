@@ -189,15 +189,20 @@ class VendorDocumentParser(BaseDocumentParser):
         # 7. Tax Rate & Tax Amount
         tax_rate = "0%"
         tax_amt = "0.00"
-        ppn_m = re.search(r'\b(?:PPN|VAT|TAX|GST)\s*(?:\(\s*(\d+(?:\.\d+)?%?)\s*\))?', prompt, re.IGNORECASE)
-        if ppn_m and ppn_m.group(1):
-            tax_rate = ppn_m.group(1).strip()
-            if not tax_rate.endswith('%'):
-                tax_rate += '%'
-
-        ppn_amt_m = re.search(r'\b(?:PPN|VAT|TAX|GST)\s*(?:\(\s*\d+(?:\.\d+)?%?\s*\))?\s*[:.-]?\s*([0-9.,]+)', prompt, re.IGNORECASE)
-        if ppn_amt_m:
-            tax_amt = ppn_amt_m.group(1).strip()
+        tax_full_m = re.search(r'\b(?:PPN|VAT|GST|Tax|Pajak)\s*(?:(?:\(\s*)?(\d{1,2}(?:\.\d+)?)\s*%\s*\)?)?\s*[:.-]?\s*([\d.,]{3,15})', prompt, re.IGNORECASE)
+        if tax_full_m:
+            if tax_full_m.group(1):
+                tax_rate = f"{tax_full_m.group(1)}%"
+            tax_amt = tax_full_m.group(2).strip()
+        else:
+            ppn_m = re.search(r'\b(?:PPN|VAT|TAX|GST)\s*(?:\(\s*(\d+(?:\.\d+)?%?)\s*\))?', prompt, re.IGNORECASE)
+            if ppn_m and ppn_m.group(1):
+                tax_rate = ppn_m.group(1).strip()
+                if not tax_rate.endswith('%'):
+                    tax_rate += '%'
+            ppn_amt_m = re.search(r'\b(?:PPN|VAT|TAX|GST)\s*(?:\(\s*\d+(?:\.\d+)?%?\s*\))?\s*[:.-]?\s*([0-9.,]+)', prompt, re.IGNORECASE)
+            if ppn_amt_m:
+                tax_amt = ppn_amt_m.group(1).strip()
 
         vendor_data["tax"] = tax_rate
         vendor_data["tax_amount"] = tax_amt
