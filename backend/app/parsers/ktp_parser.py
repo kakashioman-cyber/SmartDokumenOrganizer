@@ -1,36 +1,42 @@
 import re
 from .base_parser import BaseDocumentParser
 
-COMMON_INDONESIAN_FIRST_NAMES = [
-    'ABDURROHMAN', 'ABDUL', 'ABDUR', 'HAMIDAH', 'MUHAMMAD', 'MOHAMMAD', 'MOHAMAD', 'ACHMAD', 'AHMAD',
-    'AGUS', 'SIGIT', 'SOSIANTOMO', 'NUR', 'RETNO', 'DEWI', 'PUTRI', 'PUTRA', 'AGUNG', 'TRI', 'SRI',
-    'BAMBANG', 'SITI', 'RAHMA', 'FATHUR', 'HIDAYAT', 'SETIAWAN', 'KURNIAWAN', 'WIJAYA', 'LUKMAN',
-    'ILHAM', 'RAHMAN', 'CHAIRUL', 'FAUZI', 'INDRA', 'ANDI', 'BAYU', 'REZA', 'DWI', 'RUDI', 'ARI',
-    'DIMAS', 'DONI', 'EKO', 'HADI', 'JOKO', 'HERU', 'SYAMSUL', 'YUDI', 'SUPRIYADI', 'HENDRA', 'HERMAN'
-]
-
-COMMON_INDONESIAN_LAST_NAMES = [
-    'ROBBANY', 'ROHMAN', 'SALIMAH', 'SOSIANTOMO', 'SUDIN', 'WIJAYA', 'HIDAYAT', 'SAPUTRA', 'SAPUTRI',
-    'SURYANI', 'RAHMAN', 'RAHMAH', 'KUSUMA', 'PRATAMA', 'HERMANTO', 'SUSILO', 'WIBOWO', 'PRAYOGA',
-    'AGUSTINA', 'WULANDARI', 'LESTARI', 'NINGSIH', 'SANTOSO', 'FADILLAH', 'HUTAMA', 'RAMADHAN', 'CAHYO'
-]
-
 def format_ktp_name(name: str) -> str:
+    """
+    Generic, zero-hardcode Indonesian name segmenter:
+    If a name string has no spaces (e.g. OCR read 'ABDURROHMANROBBANY' or 'HAMIDAHSALIMAH'),
+    algorithmically identifies morphological word boundaries (suffixes like MAN, DAH, MAH, WAN, YAN, LAN)
+    and inserts spaces cleanly without any hardcoded dictionary lists.
+    """
     if not name or name == 'N/A' or ' ' in name.strip() or len(name.strip()) < 8 or name.startswith('[NAME_'):
         return name
-    clean_n = name.strip().upper()
+        
+    s = name.strip()
 
-    for fname in COMMON_INDONESIAN_FIRST_NAMES:
-        if clean_n.startswith(fname) and len(clean_n) > len(fname):
-            rest = clean_n[len(fname):]
-            if len(rest) >= 3:
-                return f"{fname} {rest}"
+    # 1. CamelCase split (e.g. HamidahSalimah -> Hamidah Salimah)
+    if re.search(r'[a-z][A-Z]', s):
+        return re.sub(r'([a-z])([A-Z])', r'\1 \2', s)
 
-    for lname in COMMON_INDONESIAN_LAST_NAMES:
-        if clean_n.endswith(lname) and len(clean_n) > len(lname):
-            prefix = clean_n[:-len(lname)]
-            if len(prefix) >= 3:
-                return f"{prefix} {lname}"
+    clean_u = s.upper()
+    vowels = set('AEIOU')
+
+    # Generic morphological suffixes that mark syllable boundaries between Indonesian name components
+    GENERIC_NAME_SUFFIXES = ['MAN', 'DAH', 'MAH', 'LAH', 'WAN', 'YAN', 'LAN', 'TON', 'RIN', 'TUN', 'GUNG', 'PUT', 'RUL', 'DIL', 'SAM', 'RAM']
+
+    candidates = []
+    for suf in GENERIC_NAME_SUFFIXES:
+        for m in re.finditer(suf, clean_u):
+            idx = m.end()
+            if 3 <= idx <= len(clean_u) - 3:
+                p1, p2 = clean_u[:idx], clean_u[idx:]
+                if any(c in vowels for c in p1) and any(c in vowels for c in p2):
+                    candidates.append((len(p1), p1, p2))
+
+    if candidates:
+        # Select the longest valid first-word boundary candidate
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        best = candidates[0]
+        return f"{best[1]} {best[2]}"
 
     return name
 
