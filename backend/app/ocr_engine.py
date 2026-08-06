@@ -56,16 +56,16 @@ def deskew_document_image(np_img):
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (40, 1))
         text_lines_mask = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
 
-        lines_p = cv2.HoughLinesP(text_lines_mask, 1, np.pi / 180, threshold=100, minLineLength=100, maxLineGap=10)
+        lines_p = cv2.HoughLinesP(text_lines_mask, 1, np.pi / 180, threshold=80, minLineLength=80, maxLineGap=10)
         angles = []
         if lines_p is not None:
             for line in lines_p:
                 x1, y1, x2, y2 = line[0]
                 angle = np.degrees(np.arctan2(y2 - y1, x2 - x1))
-                if abs(angle) <= 5.0:
+                if -45.0 <= angle <= 45.0:
                     angles.append(angle)
 
-        if not angles or abs(float(np.median(angles))) < 0.8 or abs(float(np.median(angles))) > 5.0:
+        if not angles or abs(float(np.median(angles))) < 0.5 or abs(float(np.median(angles))) > 45.0:
             return np_img
 
         angle = float(np.median(angles))
@@ -112,8 +112,8 @@ def run_paddle_ocr_fallback(np_img, is_pdf=False):
             scale_factor = max_dim / float(max(h, w))
             np_img = cv2.resize(np_img, (int(w * scale_factor), int(h * scale_factor)), interpolation=cv2.INTER_AREA)
 
-        # Digital PDF pages are 100% straight and clear; skip deskew & CLAHE overhead for 2x PDF speedup
-        prep_img = np_img if is_pdf else enhance_document_image(np_img)
+        # Run Auto-Deskew on ALL images and PDF pages (takes <0.01s post-resize)
+        prep_img = deskew_document_image(np_img) if is_pdf else enhance_document_image(np_img)
         result = p_engine.ocr(prep_img)
         if not result:
             return ""
