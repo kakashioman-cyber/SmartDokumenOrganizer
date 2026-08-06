@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: smart-document-organizer
+    env: docker
+    plan: free
+    dockerfilePath: Dockerfile
+    autoDeploy: true
