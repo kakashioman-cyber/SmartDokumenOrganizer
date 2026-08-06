@@ -25,7 +25,7 @@ DOB_REGEX = re.compile(
 # Address & RT/RW Regexes
 ADDRESS_CONTEXT_REGEX = re.compile(
     r'\b(?:Alamat|Address)\s*[:.-]?[ \t]*([A-Za-z0-9\s.,/\\-]+?)(?=\s*(?:Tanggal|Tgl|Date|Nomor|No\.|Invoice|PO|Email|No\.\s*Telp|\||\n)|$)|'
-    r'\b(?:JL\.?|JALAN)\s*[^\n|]+',
+    r'\b(?:JL\.?|JALAN)\s*.*?(?=\s*(?:Due|Project|Date|Tanggal|Tgl|Invoice|PO|Telp|Phone|Fax|Email|\||\n)|$)',
     re.IGNORECASE
 )
 
