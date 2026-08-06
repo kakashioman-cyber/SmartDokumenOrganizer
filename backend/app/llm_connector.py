@@ -460,7 +460,7 @@ def analyze_document_image(image_bytes: bytes, doc_type: str = "auto", provider:
 
             logger.info("Calling Direct Google Gemini Vision API...")
             encoded_g_key = urllib.parse.quote(gemini_key)
-            models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-flash-latest"]
+            models_to_try = ["gemini-flash-latest", "gemini-2.0-flash-exp", "gemini-1.5-flash-latest"]
             
             prompt_text = f"""Extract structured JSON for document category: '{effective_type}'.
 Return ONLY valid JSON with fields: vendor_name, customer_name, id_number, full_name, place_of_birth, date_of_birth, gender, blood_type, address, rt_rw, kel_desa, kecamatan, religion, marital_status, occupation, nationality, issue_date, expiry_date, issuing_office, invoice_number, po_number, invoice_date, order_date, due_date, delivery_date, subtotal, tax, tax_amount, total_amount, currency, items (array of {{no, sku, description, qty, unit, unit_price, total}}).
@@ -486,28 +486,26 @@ CRITICAL EXTRACTION RULES:
             last_error_msg = ""
             for model_name in models_to_try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={encoded_g_key}"
-                for attempt in range(1, 4):
-                    try:
-                        req = urllib.request.Request(url, data=req_data, headers={'Content-Type': 'application/json'})
-                        with urllib.request.urlopen(req, timeout=20) as resp:
-                            res_json = json.loads(resp.read().decode('utf-8'))
-                            text_resp = res_json['candidates'][0]['content']['parts'][0]['text']
-                            clean_json = re.sub(r'^```json\s*|\s*```$', '', text_resp.strip())
-                            parsed_vision = json.loads(clean_json)
-                            logger.info(f"Direct Gemini Vision extraction success via {model_name}!")
-                            return post_process_extracted_data(parsed_vision, effective_type, raw_text="")
-                    except urllib.error.HTTPError as http_err:
-                        err_msg = http_err.read().decode('utf-8')
-                        logger.warning(f"Gemini API Attempt {attempt} ({model_name}) HTTP {http_err.code}: {err_msg}")
-                        last_error_msg = f"HTTP {http_err.code}"
-                        if http_err.code in [503, 429, 500] and attempt < 3:
-                            import time
-                            time.sleep(1.5 * attempt)
-                            continue
-                        break
-                    except Exception as ex:
-                        logger.error(f"Gemini API Exception: {ex}")
-                        break
+                try:
+                    req = urllib.request.Request(url, data=req_data, headers={'Content-Type': 'application/json'})
+                    with urllib.request.urlopen(req, timeout=15) as resp:
+                        res_json = json.loads(resp.read().decode('utf-8'))
+                        text_resp = res_json['candidates'][0]['content']['parts'][0]['text']
+                        clean_json = re.sub(r'^```json\s*|\s*```$', '', text_resp.strip())
+                        parsed_vision = json.loads(clean_json)
+                        logger.info(f"Direct Gemini Vision extraction success via {model_name}!")
+                        return post_process_extracted_data(parsed_vision, effective_type, raw_text="")
+                except urllib.error.HTTPError as http_err:
+                    err_msg = http_err.read().decode('utf-8')
+                    logger.warning(f"Gemini API Model ({model_name}) HTTP {http_err.code}: {err_msg}")
+                    last_error_msg = f"HTTP {http_err.code}"
+                    if http_err.code == 404:
+                        continue
+                    elif http_err.code == 429:
+                        continue
+                except Exception as ex:
+                    logger.error(f"Gemini API Exception: {ex}")
+                    continue
 
             if "503" in last_error_msg:
                 return {"error": "⚠️ Server Google AI sedang mengalami beban tinggi / sibuk sementara (HTTP 503). Silakan coba lagi beberapa saat lagi."}, effective_type
