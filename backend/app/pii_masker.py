@@ -196,7 +196,7 @@ class PIIMasker:
                 name_val = m.group(1).strip()
                 if any(kw in name_val.upper() for kw in ["PAYABLE", "INVOICE", "ORDER", "SUBTOTAL", "TOTAL", "AMOUNT", "TEMPAT", "TEMPAL", "LAHIR", "TGL", "PROVINSI", "KOTA", "KABUPATEN", "AGAMA", "PEKERJAAN", "STATUS", "BERLAKU", "NIK", "GOL", "JENIS", "KELAMIN", "ALAMAT"]):
                     continue
-                # Skip city names or city-date lines (e.g. SURABAYA,28-06-1965) from being masked as NAME
+                # Skip city names or city-date lines from being masked
                 if re.search(r'[,.:\s]+\d{1,2}[\s.\-/]+\d{1,2}[\s.\-/]+\d{2,4}', text[m.start():m.end()+20]) or re.search(r'\b(?:SURABAYA|JAKARTA|BANDUNG|MEDAN|SEMARANG|BALI|MALANG|MAKASSAR|YOGYAKARTA|SOLO|DENPASAR|PALEMBANG|BATAM|PEKANBARU|BOGOR|BEKASI|TANGERANG|DEPOK)\b', name_val.upper()):
                     continue
                 full_match = m.group()
