@@ -34,14 +34,14 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Database & Environment
+# Database & Environment Files (STRICTLY EXCLUDED)
 *.db
 *.sqlite3
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+*.env
+*.env.*
+!.env.example
 
 # Temp files & OS
 .DS_Store
