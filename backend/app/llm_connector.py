@@ -121,7 +121,7 @@ def clean_api_key(k: str) -> str:
 def sanitize_category_fields(data: dict, effective_type: str) -> dict:
     cat = effective_type.lower().strip()
     if cat == "ktp":
-        from app.parsers.ktp_parser import format_ktp_name, format_ktp_address
+        from .parsers.ktp_parser import format_ktp_name, format_ktp_address
         nik_val = str(data.get("id_number") or data.get("nik") or data.get("invoice_number") or "").strip()
         pob = data.get("place_of_birth") or data.get("tempat_lahir", "N/A")
         dob = data.get("date_of_birth") or data.get("tanggal_lahir", "N/A")
@@ -145,7 +145,7 @@ def sanitize_category_fields(data: dict, effective_type: str) -> dict:
             "expiry_date": str(data.get("expiry_date") or data.get("berlaku_hingga", "SEUMUR HIDUP")).strip()
         }
     elif cat == "passport":
-        from app.parsers.passport_parser import format_passport_name
+        from .parsers.passport_parser import format_passport_name
         pass_num = str(data.get("passport_number") or data.get("id_number") or "N/A").strip()
         raw_pname = str(data.get("full_name") or data.get("nama") or "N/A").strip()
         return {
@@ -232,7 +232,7 @@ def post_process_extracted_data(parsed_data: dict, effective_type: str, raw_text
         effective_type = "ktp"
         if raw_text:
             try:
-                from app.parsers.ktp_parser import KTPParser
+                from .parsers.ktp_parser import KTPParser
                 rule_data = KTPParser().parse(raw_text, raw_text.split('\n'))
                 for k, v in rule_data.items():
                     cur = str(parsed_data.get(k, "")).strip()
@@ -250,7 +250,7 @@ def post_process_extracted_data(parsed_data: dict, effective_type: str, raw_text
         effective_type = "passport"
         if raw_text:
             try:
-                from app.parsers.passport_parser import PassportParser
+                from .parsers.passport_parser import PassportParser
                 rule_data = PassportParser().parse(raw_text, raw_text.split('\n'))
                 for k, v in rule_data.items():
                     cur = str(parsed_data.get(k, "")).strip()
@@ -265,7 +265,7 @@ def post_process_extracted_data(parsed_data: dict, effective_type: str, raw_text
     # 3. Vendor PO Check (Priority 3) & Rule Enhancement Merge
     if raw_text:
         try:
-            from app.parsers.vendor_doc_parser import VendorDocumentParser
+            from .parsers.vendor_doc_parser import VendorDocumentParser
             rule_vdata = VendorDocumentParser().parse(raw_text)
             
             rule_po = rule_vdata.get("po_number", "N/A")
@@ -350,7 +350,7 @@ def post_process_extracted_data(parsed_data: dict, effective_type: str, raw_text
                     item["unit"] = "pcs"
 
     # Harmonize currency & amount strings
-    from app.parsers.invoice_parser import clean_final_invoice_data
+    from .parsers.invoice_parser import clean_final_invoice_data
     parsed_data = clean_final_invoice_data(parsed_data, raw_text)
 
     # 5. Business Card Check
@@ -462,7 +462,7 @@ def analyze_document_image(image_bytes: bytes, doc_type: str = "auto", provider:
 
             logger.info("Calling Direct Google Gemini Vision API...")
             encoded_g_key = urllib.parse.quote(gemini_key)
-            models_to_try = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-flash-latest"]
+            models_to_try = ["gemini-flash-latest", "gemini-2.0-flash-exp", "gemini-1.5-flash-latest"]
             
             prompt_text = f"""Extract structured JSON for document category: '{effective_type}'.
 Return ONLY valid JSON with fields: vendor_name, customer_name, id_number, full_name, place_of_birth, date_of_birth, gender, blood_type, address, rt_rw, kel_desa, kecamatan, religion, marital_status, occupation, nationality, issue_date, expiry_date, issuing_office, invoice_number, po_number, invoice_date, order_date, due_date, delivery_date, subtotal, tax, tax_amount, total_amount, currency, items (array of {{no, sku, description, qty, unit, unit_price, total}}).
