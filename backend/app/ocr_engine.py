@@ -3,6 +3,7 @@ import io
 import logging
 from PIL import Image
 import numpy as np
+import cv2
 try:
     import easyocr
 except Exception as e:
