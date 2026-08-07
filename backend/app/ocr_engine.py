@@ -3,9 +3,15 @@ import io
 import logging
 from PIL import Image
 import numpy as np
-import cv2
-import easyocr
-import pypdfium2 as pdfium
+try:
+    import easyocr
+except Exception as e:
+    easyocr = None
+
+try:
+    import pypdfium2 as pdfium
+except Exception as e:
+    pdfium = None
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ocr_engine")
@@ -14,12 +20,14 @@ _reader_cache = {}
 _paddle_cache = None
 
 def get_ocr_reader(languages=None):
+    if easyocr is None:
+        return None
     if languages is None:
         languages = ['en', 'id']
     cache_key = tuple(sorted(languages))
     if cache_key not in _reader_cache:
         logger.info(f"Initializing EasyOCR Reader for languages: {languages}")
-        _reader_cache[cache_key] = easyocr.Reader(languages, gpu=True)
+        _reader_cache[cache_key] = easyocr.Reader(languages, gpu=False)
     return _reader_cache[cache_key]
 
 def get_paddle_ocr():
