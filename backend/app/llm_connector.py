@@ -462,7 +462,7 @@ def analyze_document_image(image_bytes: bytes, doc_type: str = "auto", provider:
 
             logger.info("Calling Direct Google Gemini Vision API...")
             encoded_g_key = urllib.parse.quote(gemini_key)
-            models_to_try = ["gemini-flash-latest", "gemini-2.0-flash-exp", "gemini-1.5-flash-latest"]
+            models_to_try = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-flash-latest"]
             
             prompt_text = f"""Extract structured JSON for document category: '{effective_type}'.
 Return ONLY valid JSON with fields: vendor_name, customer_name, id_number, full_name, place_of_birth, date_of_birth, gender, blood_type, address, rt_rw, kel_desa, kecamatan, religion, marital_status, occupation, nationality, issue_date, expiry_date, issuing_office, invoice_number, po_number, invoice_date, order_date, due_date, delivery_date, subtotal, tax, tax_amount, total_amount, currency, items (array of {{no, sku, description, qty, unit, unit_price, total}}).
