@@ -1,14 +1,3 @@
----
-title: Smart Document Organizer IDP
-emoji: 📑
-colorFrom: blue
-colorTo: indigo
-sdk: streamlit
-sdk_version: 1.28.0
-app_file: app.py
-pinned: false
----
-
 # 📑 Smart Document Organizer IDP
 
 AI-Powered Intelligent Document Processing & Data Extraction Platform.
